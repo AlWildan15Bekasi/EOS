@@ -136,13 +136,11 @@
         #wiz-mini-calendar .fc-scroller { overflow: hidden !important; }
 
         /* Star Rating */
-        .star-rating { display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 4px;}
-        .star-rating input { display: none; }
-        .star-rating label { font-size: 28px; color: #cbd5e1; cursor: pointer; transition: color 0.2s;}
-        .star-rating label:hover, .star-rating label:hover ~ label, .star-rating input:checked ~ label { color: #fbbf24; }
-            .print-hide { display: none !important; }
-            .print-page-break { break-before: page; page-break-before: always; }
-    </style>
+     .star-rating { display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 4px;}
+     .star-rating input { display: none; }
+     .star-rating label { font-size: 28px; color: #cbd5e1; cursor: pointer; transition: color 0.2s;}
+     .star-rating label:hover, .star-rating label:hover ~ label, .star-rating input:checked ~ label { color: #fbbf24; }
+ </style>
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-slate-800 h-screen w-screen overflow-hidden relative selection:bg-amber-200 selection:text-blue-900">
 
@@ -212,6 +210,7 @@
                             <h4 class="font-black text-slate-800 text-sm mb-1.5"><i class="fa-solid fa-circle-info text-aw-blue mr-1.5"></i> Informasi Lokasi</h4>
                             <p id="wiz-loc-desc" class="text-xs text-slate-600 leading-relaxed mb-3">Deskripsi lokasi.</p>
                             <div id="wiz-loc-amen" class="flex flex-wrap gap-1.5"></div>
+                            <div id="wiz-loc-reviews" class="mt-3 pt-3 border-t border-blue-100/80"></div>
                         </div>
                         <div class="w-full md:w-48 bg-white p-3 rounded-xl border border-blue-100 shadow-sm shrink-0 flex flex-col justify-center text-center">
                             <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Estimasi Harga</span>
@@ -2021,9 +2020,66 @@
                 showToast("Gagal menghapus laporan.", "error");
             }
         }
+       // ==========================================
+        // KATALOG VIEW & RATING AGGREGATOR LOGIC
         // ==========================================
-        // KATALOG VIEW LOGIC
-        // ==========================================
+        // Helper Cerdas: Menghitung rata-rata bintang & menarik ulasan dari GLOBAL_EVENTS
+        function getItemRatingStats(type, itemId) {
+            let totalStars = 0;
+            let count = 0;
+            let reviews = [];
+
+            GLOBAL_EVENTS.forEach(ev => {
+                const ep = ev.extendedProps;
+                if (!ep || !ep.isReviewed || !ep.laporan_evaluasi) return;
+                
+                let rep = ep.laporan_evaluasi;
+                if (typeof rep === 'string') {
+                    try { rep = JSON.parse(rep); } catch(e) { return; }
+                }
+
+                if (type === 'lokasi' && parseInt(ep.locId) === parseInt(itemId) && rep.ratingTrans) {
+                    totalStars += parseInt(rep.ratingTrans);
+                    count++;
+                    if (rep.reviewLocText) reviews.push({ branch: ep.branch, text: rep.reviewLocText, rate: parseInt(rep.ratingTrans), date: ev.start });
+                } else if (type === 'bus' && parseInt(ep.busVendorId) === parseInt(itemId) && rep.ratingBus) {
+                    totalStars += parseInt(rep.ratingBus);
+                    count++;
+                    if (rep.reviewBusText) reviews.push({ branch: ep.branch, text: rep.reviewBusText, rate: parseInt(rep.ratingBus), date: ev.start });
+                } else if (type === 'konsumsi' && parseInt(ep.catVendorId) === parseInt(itemId) && rep.ratingFood) {
+                    totalStars += parseInt(rep.ratingFood);
+                    count++;
+                    if (rep.reviewFoodText) reviews.push({ branch: ep.branch, text: rep.reviewFoodText, rate: parseInt(rep.ratingFood), date: ev.start });
+                }
+            });
+
+            const avg = count > 0 ? (totalStars / count).toFixed(1) : null;
+            return { avg, count, reviews };
+        }
+
+        function getRatingBadgeHtml(type, itemId) {
+            const st = getItemRatingStats(type, itemId);
+            if (!st.avg) {
+                return `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200"><i class="fa-regular fa-star"></i> Belum ada ulasan</span>`;
+            }
+            return `<span class="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 shadow-sm"><i class="fa-solid fa-star text-aw-yellow"></i> ${st.avg} <span class="font-semibold text-amber-600/80">(${st.count} Ulasan)</span></span>`;
+        }
+
+        function getLatestReviewSnippetHtml(type, itemId) {
+            const st = getItemRatingStats(type, itemId);
+            if (st.reviews.length === 0) return '';
+            const latest = st.reviews[st.reviews.length - 1];
+            return `
+                <div class="mt-2.5 p-2.5 bg-amber-50/60 border border-amber-200/70 rounded-xl text-[10px] text-slate-600 leading-relaxed">
+                    <div class="font-black text-amber-800 mb-0.5 flex items-center justify-between">
+                        <span><i class="fa-solid fa-comment-dots mr-1 text-amber-500"></i>${latest.branch}</span>
+                        <span class="text-aw-yellow">${'★'.repeat(latest.rate)}</span>
+                    </div>
+                    <p class="italic line-clamp-2">"${latest.text}"</p>
+                </div>
+            `;
+        }
+
         function setKatalogFilter(type) {
             activeKatalogTab = type;
             ['Lokasi', 'Bus', 'Konsumsi'].forEach(t => {
@@ -2053,9 +2109,11 @@
                             </div>
                         </div>
                         <div class="p-5 flex-1 flex flex-col bg-white/50">
+                            <div class="mb-1.5">${getRatingBadgeHtml('lokasi', loc.id)}</div>
                             <h3 class="text-lg font-black text-slate-800 leading-tight mb-1">${loc.name}</h3>
                             <p class="text-xs font-bold text-slate-500 mb-3"><i class="fa-solid fa-location-dot"></i> ${loc.area}</p>
-                            <div class="flex flex-wrap gap-1.5 mb-3">${tagsHtml}</div>
+                            <div class="flex flex-wrap gap-1.5 mb-2">${tagsHtml}</div>
+                            ${getLatestReviewSnippetHtml('lokasi', loc.id)}
                             <div class="flex items-center justify-between mt-auto pt-4 border-t border-slate-200/60">
                                 <span class="text-sm font-black text-slate-700">${loc.price}</span>
                             </div>
@@ -2072,9 +2130,11 @@
                             <button onclick="editKatalogItem('bus', ${b.id})" class="w-8 h-8 bg-white/90 hover:bg-aw-blue hover:text-white text-aw-blue rounded-full shadow-md transition-colors flex items-center justify-center"><i class="fa-solid fa-pen text-xs"></i></button>
                             <button onclick="deleteMasterData('vendor_bus', ${b.id})" class="w-8 h-8 bg-white/90 hover:bg-red-500 hover:text-white text-red-500 rounded-full shadow-md transition-colors flex items-center justify-center"><i class="fa-solid fa-trash text-xs"></i></button>
                         </div>
-                        <img src="${imgSrc}" class="w-full h-32 object-cover rounded-lg mb-4 shadow-sm group-hover:scale-105 transition-transform">
+                        <img src="${imgSrc}" class="w-full h-32 object-cover rounded-lg mb-3 shadow-sm group-hover:scale-105 transition-transform">
+                        <div class="mb-1.5">${getRatingBadgeHtml('bus', b.id)}</div>
                         <h4 class="font-bold text-slate-800 text-base mb-1">${b.name}</h4>
                         <p class="text-xs text-slate-500 mb-2"><i class="fa-solid fa-phone mr-1"></i> ${b.cp}</p>
+                        ${getLatestReviewSnippetHtml('bus', b.id)}
                         <p class="text-sm font-black text-aw-blue mt-auto border-t border-slate-100 pt-3">Rp ${b.price.toLocaleString('id-ID')} <span class="text-[10px] font-medium text-slate-500">/ hari</span></p>
                     </div>`;
                 });
@@ -2082,7 +2142,7 @@
                 if(MOCK_CATERING.length === 0) { grid.innerHTML = `<div class="col-span-full py-10 text-center italic text-slate-500">Belum ada data Konsumsi.</div>`; return; }
                 MOCK_CATERING.forEach(c => {
                     let imgArray = c.img ? c.img.split(',') : ['https://placehold.co/600x400/ffedd5/ea580c?text=No+Menu'];
-                    let imagesHtml = '<div class="flex gap-2 overflow-x-auto hide-scrollbar mb-4 rounded-lg">';
+                    let imagesHtml = '<div class="flex gap-2 overflow-x-auto hide-scrollbar mb-3 rounded-lg">';
                     imgArray.forEach(url => { imagesHtml += `<img src="${url.trim()}" class="w-[85%] shrink-0 h-32 object-cover rounded-lg shadow-sm">`; });
                     imagesHtml += '</div>';
 
@@ -2093,15 +2153,16 @@
                             <button onclick="deleteMasterData('vendor_catering', ${c.id})" class="w-8 h-8 bg-white/90 hover:bg-red-500 hover:text-white text-red-500 rounded-full shadow-md transition-colors flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-trash text-xs"></i></button>
                         </div>
                         ${imagesHtml}
+                        <div class="mb-1.5">${getRatingBadgeHtml('konsumsi', c.id)}</div>
                         <h4 class="font-bold text-slate-800 text-base mb-1">${c.name}</h4>
                         <p class="text-xs text-slate-500 mb-2"><i class="fa-solid fa-phone mr-1"></i> ${c.cp}</p>
+                        ${getLatestReviewSnippetHtml('konsumsi', c.id)}
                         <p class="text-sm font-black text-orange-600 mt-auto border-t border-slate-100 pt-3">Rp ${c.price.toLocaleString('id-ID')} <span class="text-[10px] font-medium text-slate-500">/ pax</span></p>
                     </div>`;
                 });
             }
             grid.innerHTML = html;
         }
-
         function editKatalogItem(type, id) {
             if (type === 'lokasi') {
                 const loc = MOCK_LOCATIONS.find(l => l.id === id);
@@ -2635,11 +2696,13 @@
                             <div class="absolute top-3 left-3 z-20 bg-aw-navy text-white px-3 py-1 rounded-lg text-[10px] font-black shadow-md uppercase tracking-wider">${loc.type}</div>
                         </div>
                         <div class="p-5 flex-1 flex flex-col bg-white/50">
+                            <div class="mb-1.5">${getRatingBadgeHtml('lokasi', loc.id)}</div>
                             <h3 class="text-lg font-black text-slate-800 leading-tight group-hover:text-aw-blue transition-colors mb-1 line-clamp-1">${loc.name}</h3>
                             <p class="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1.5"><i class="fa-solid fa-location-dot"></i> ${loc.area}</p>
-                            <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-4 flex-1">${loc.desc}</p>
-                            <div class="flex flex-wrap gap-1.5 mb-3">${tagsHtml}</div>
-                            <div class="flex flex-wrap gap-2 mb-5">${getNeedsBadgesHtml(loc.needs)}</div>
+                            <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3 flex-1">${loc.desc}</p>
+                            <div class="flex flex-wrap gap-1.5 mb-2">${tagsHtml}</div>
+                            <div class="flex flex-wrap gap-2 mb-3">${getNeedsBadgesHtml(loc.needs)}</div>
+                            ${getLatestReviewSnippetHtml('lokasi', loc.id)}
                             <div class="pt-4 border-t border-slate-200/60 flex items-center justify-between mt-auto">
                                 <div><p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Mulai Dari</p><p class="text-sm font-black text-slate-700">${loc.price}</p></div>
                                 <button onclick="openBookingWizard(${loc.id})" class="text-xs font-black bg-aw-blue text-white px-4 py-2 rounded-xl shadow hover:bg-blue-700 transition">Mulai Booking ➔</button>
@@ -2664,7 +2727,6 @@
         function populateWizardRombel() {
             const rombelList = document.getElementById('wiz-rombel-list');
             let groupedClasses = {};
-            // Kelompokkan siswa berdasarkan kelasnya
             MOCK_STUDENTS.forEach(s => { 
                 if(!groupedClasses[s.class]) groupedClasses[s.class] = [];
                 groupedClasses[s.class].push(s);
@@ -2673,7 +2735,6 @@
             let rHtml = '';
             Object.keys(groupedClasses).forEach(cls => {
                 let studentsHtml = '';
-                // Buat list anak-anak di dalam kelas tersebut
                 groupedClasses[cls].forEach(siswa => {
                     studentsHtml += `
                         <div class="flex items-center gap-2 pl-8 py-2 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
@@ -2710,8 +2771,6 @@
         function toggleKelasSiswa(cls, isChecked) {
             const listContainer = document.getElementById(`list-siswa-${cls}`);
             const checkboxes = listContainer.querySelectorAll('.wiz-cb-siswa');
-            
-            // Mekar/Kuncupkan daftar nama anak
             if (isChecked) {
                 listContainer.classList.remove('hidden');
                 listContainer.classList.add('flex');
@@ -2719,10 +2778,8 @@
                 listContainer.classList.add('hidden');
                 listContainer.classList.remove('flex');
             }
-            
-            // Centang/Hapus centang semua anak secara masif
             checkboxes.forEach(cb => cb.checked = isChecked);
-            calculatePax(); // Hitung ulang total
+            calculatePax();
         }
 
         function renderBusCatalog() {
@@ -2735,9 +2792,11 @@
                 <label class="cursor-pointer relative group">
                     <input type="radio" name="wiz_bus_radio" value="${b.id}" class="peer sr-only" onchange="wizData.busVendor = this.value; checkStep3()">
                     <div class="rounded-xl border-2 border-slate-200 p-3 bg-white peer-checked:border-aw-blue peer-checked:bg-blue-50 transition-all hover:border-blue-300 shadow-sm flex flex-col h-full">
-                        <img src="${imgSrc}" class="w-full h-24 object-cover rounded-lg mb-3 shadow-sm group-hover:scale-105 transition-transform">
+                        <img src="${imgSrc}" class="w-full h-24 object-cover rounded-lg mb-2.5 shadow-sm group-hover:scale-105 transition-transform">
+                        <div class="mb-1">${getRatingBadgeHtml('bus', b.id)}</div>
                         <h4 class="font-bold text-slate-800 text-sm mb-1">${b.name}</h4>
-                        <p class="text-xs font-black text-aw-blue">Rp ${b.price.toLocaleString('id-ID')} <span class="text-[10px] font-medium text-slate-500">/ hari</span></p>
+                        <p class="text-xs font-black text-aw-blue mb-1">Rp ${b.price.toLocaleString('id-ID')} <span class="text-[10px] font-medium text-slate-500">/ hari</span></p>
+                        ${getLatestReviewSnippetHtml('bus', b.id)}
                     </div>
                 </label>`;
             });
@@ -2753,7 +2812,7 @@
                 let badge = c.locId ? `<span class="absolute top-2 left-2 z-10 bg-aw-green text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm">Satu Lokasi</span>` : '';
                 
                 let imgArray = c.img ? c.img.split(',') : ['https://placehold.co/600x400/ffedd5/ea580c?text=No+Menu'];
-                let imagesHtml = '<div class="flex gap-2 overflow-x-auto hide-scrollbar mb-3 rounded-lg">';
+                let imagesHtml = '<div class="flex gap-2 overflow-x-auto hide-scrollbar mb-2.5 rounded-lg">';
                 imgArray.forEach(url => {
                     imagesHtml += `<img src="${url.trim()}" class="w-[85%] shrink-0 h-24 object-cover rounded-lg shadow-sm group-hover:scale-105 transition-transform">`;
                 });
@@ -2764,8 +2823,10 @@
                     <input type="radio" name="wiz_cat_radio" value="${c.id}" class="peer sr-only" onchange="wizData.catVendor = this.value; checkStep4()">
                     <div class="rounded-xl border-2 border-slate-200 p-3 bg-white peer-checked:border-orange-500 peer-checked:bg-orange-50 transition-all hover:border-orange-300 relative overflow-hidden shadow-sm flex flex-col h-full">
                         ${badge}${imagesHtml}
+                        <div class="mb-1">${getRatingBadgeHtml('konsumsi', c.id)}</div>
                         <h4 class="font-bold text-slate-800 text-sm mb-1 truncate">${c.name}</h4>
-                        <p class="text-xs font-black text-orange-600">Rp ${c.price.toLocaleString('id-ID')} <span class="text-[10px] font-medium text-slate-500">/ pax</span></p>
+                        <p class="text-xs font-black text-orange-600 mb-1">Rp ${c.price.toLocaleString('id-ID')} <span class="text-[10px] font-medium text-slate-500">/ pax</span></p>
+                        ${getLatestReviewSnippetHtml('konsumsi', c.id)}
                     </div>
                 </label>`;
             });
@@ -2786,11 +2847,8 @@
         }
 
         function calculatePax() {
-            // Bersihkan array lama
             wizData.pesertaSiswa = [];
             wizData.pesertaGuru = [];
-            
-            // Loop & kumpulkan semua ID Anak dan Guru yang dicentang
             document.querySelectorAll('.wiz-cb-siswa:checked').forEach(cb => {
                 wizData.pesertaSiswa.push(parseInt(cb.value));
             });
@@ -2798,7 +2856,6 @@
                 wizData.pesertaGuru.push(parseInt(cb.value));
             });
 
-            // Kalkulasi Total Individu Nyata
             let total = wizData.pesertaSiswa.length + wizData.pesertaGuru.length;
             wizData.totalPax = total;
             document.getElementById('wiz-total-pax').innerText = `${total} Orang`;
@@ -2829,6 +2886,22 @@
             let tagsHtml = activeLocation.amen.map(a => `<span class="bg-blue-100 text-aw-blue text-[10px] font-bold px-2 py-1 rounded shadow-sm border border-blue-200">${a}</span>`).join('');
             document.getElementById('wiz-loc-amen').innerHTML = tagsHtml;
 
+            // Tampilkan daftar ulasan cabang di Step 1 Wizard
+            const revContainer = document.getElementById('wiz-loc-reviews');
+            if (revContainer) {
+                const st = getItemRatingStats('lokasi', activeLocation.id);
+                if (st.reviews.length === 0) {
+                    revContainer.innerHTML = `<p class="text-[10px] text-slate-400 italic"><i class="fa-regular fa-star mr-1"></i>Belum ada evaluasi dari cabang lain untuk lokasi ini.</p>`;
+                } else {
+                    let revHtml = `<div class="flex items-center gap-2 mb-2"><span class="text-[10px] font-black uppercase tracking-wider text-slate-600">Evaluasi Cabang (${st.avg}/5.0 ★):</span></div><div class="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar pr-1">`;
+                    st.reviews.forEach(r => {
+                        revHtml += `<div class="bg-white/90 border border-blue-100 rounded-lg p-2 text-[10px] text-slate-600"><span class="font-black text-aw-navy">${r.branch}</span> <span class="text-aw-yellow font-bold">(${'★'.repeat(r.rate)})</span>: <span class="italic">"${r.text}"</span></div>`;
+                    });
+                    revHtml += `</div>`;
+                    revContainer.innerHTML = revHtml;
+                }
+            }
+
             updateWizardUI();
             openModal('wizard-modal');
             setTimeout(() => { 
@@ -2838,7 +2911,6 @@
                 renderCateringCatalog();
             }, 200);
         }
-
         function closeWizard() { closeModal('wizard-modal'); }
 
         function updateWizardUI() {
