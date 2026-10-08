@@ -1107,27 +1107,14 @@
                             <div id="dashboard-global-agenda" class="space-y-3"></div>
                         </div>
                         <div class="lg:col-span-1 space-y-6">
-                            <div class="glass-card p-5 relative overflow-hidden border-t-4 border-t-emerald-400">
-                                <h3 class="text-sm font-black text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-route text-emerald-500"></i> Kunjungan Terakhir (C15)</h3>
-                                <div class="space-y-3">
-                                    <div class="flex items-start gap-3 pb-3 border-b border-slate-100">
-                                        <div class="w-8 h-8 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-check"></i></div>
-                                        <div>
-                                            <p class="text-xs font-bold text-slate-700">Taman Bunga Nusantara</p>
-                                            <p class="text-[10px] text-slate-500">Fieldtrip • 15 Agu 2026</p>
-                                        </div>
-                                    </div>
-                                    <div class="flex items-start gap-3 pb-3 border-b border-slate-100">
-                                        <div class="w-8 h-8 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-check"></i></div>
-                                        <div>
-                                            <p class="text-xs font-bold text-slate-700">Museum Geologi</p>
-                                            <p class="text-[10px] text-slate-500">Outing Class • 02 Mar 2026</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button onclick="switchTab('history')" class="w-full mt-3 text-xs font-bold text-aw-green hover:text-emerald-700 transition text-center py-2 bg-emerald-50 rounded-xl">Lihat Histori Lengkap</button>
-                            </div>
-                        </div>
+                         <div class="glass-card p-5 relative overflow-hidden border-t-4 border-t-emerald-400">
+                             <h3 class="text-sm font-black text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-route text-emerald-500"></i> <span id="last-visit-title">Kunjungan Terakhir</span></h3>
+                             <div id="dashboard-last-visits" class="space-y-3">
+                                 <!-- Diisi otomatis dari MY_HISTORY oleh JS -->
+                             </div>
+                             <button onclick="switchTab('history')" class="w-full mt-3 text-xs font-bold text-aw-green hover:text-emerald-700 transition text-center py-2 bg-emerald-50 rounded-xl">Lihat Histori Lengkap</button>
+                         </div>
+                     </div>
                     </div>
 
                     <!-- ON-GOING / PLANNING SECTION -->
@@ -1778,7 +1765,8 @@
                                 daftar_siswa: ev.daftar_siswa,
                                 daftar_guru: ev.daftar_guru,
                                 isReviewed: ev.is_reviewed || false,
-                                laporan_evaluasi: ev.laporan_evaluasi || null, // <--- TAMBAHKAN BARIS INI
+                                laporan_evaluasi: ev.laporan_evaluasi || null,
+                                status: statusEv, // <--- TAMBAHKAN BARIS INI
                                 konfigurasi_bus: ev.konfigurasi_bus
                             }
                         };
@@ -1904,11 +1892,16 @@
             document.getElementById('stat-bus').innerText = MOCK_BUS.length;
             document.getElementById('stat-planning').innerText = MY_PLANNING.length;
 
+            // 1. Agenda Seluruh Cabang (Hanya tampilkan yang belum Selesai / masih On-Going)
             const globalContainer = document.getElementById('dashboard-global-agenda');
             let globalHtml = '';
-            const upcoming = GLOBAL_EVENTS.sort((a,b) => new Date(a.start) - new Date(b.start)).slice(0, 5);
+            const upcoming = GLOBAL_EVENTS
+                .filter(ag => ag.extendedProps.status !== 'Selesai')
+                .sort((a,b) => new Date(a.start) - new Date(b.start))
+                .slice(0, 5);
+
             if(upcoming.length === 0) {
-                globalContainer.innerHTML = `<div class="bg-slate-50 border border-dashed border-slate-200 p-4 rounded-xl text-center"><p class="text-xs font-medium text-slate-500">Tidak ada agenda terdekat.</p></div>`;
+                globalContainer.innerHTML = `<div class="bg-slate-50 border border-dashed border-slate-200 p-4 rounded-xl text-center"><p class="text-xs font-medium text-slate-500">Tidak ada agenda mendatang.</p></div>`;
             } else {
                 upcoming.forEach(ag => {
                     const dObj = new Date(ag.start);
@@ -1930,6 +1923,35 @@
                 globalContainer.innerHTML = globalHtml;
             }
 
+            // 2. Kunjungan Terakhir Cabang (Real dari MY_HISTORY)
+            const lastVisitTitle = document.getElementById('last-visit-title');
+            if (lastVisitTitle && sessionCabang) {
+                lastVisitTitle.innerText = `Kunjungan Terakhir (${sessionCabang.kode_cabang})`;
+            }
+            const lastVisitsContainer = document.getElementById('dashboard-last-visits');
+            if (lastVisitsContainer) {
+                const recentHist = [...MY_HISTORY].sort((a,b) => new Date(b.start) - new Date(a.start)).slice(0, 3);
+                if (recentHist.length === 0) {
+                    lastVisitsContainer.innerHTML = `<div class="bg-slate-50 border border-dashed border-slate-200 p-4 rounded-xl text-center"><p class="text-xs font-medium text-slate-400">Belum ada riwayat kunjungan selesai.</p></div>`;
+                } else {
+                    let lvHtml = '';
+                    recentHist.forEach(h => {
+                        const dObj = new Date(h.start);
+                        const dateFormatted = isNaN(dObj) ? h.start : dObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+                        lvHtml += `
+                            <div class="flex items-start gap-3 pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+                                <div class="w-8 h-8 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-check"></i></div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-xs font-bold text-slate-700 truncate">${h.extendedProps.loc}</p>
+                                    <p class="text-[10px] text-slate-500">${h.type} • ${dateFormatted}</p>
+                                </div>
+                            </div>`;
+                    });
+                    lastVisitsContainer.innerHTML = lvHtml;
+                }
+            }
+
+            // 3. On-Going / Event Planning
             const planContainer = document.getElementById('planning-cards-container');
             let planHtml = '';
             if(MY_PLANNING.length === 0) {
@@ -1963,7 +1985,7 @@
                 planContainer.innerHTML = planHtml;
             }
 
-            // --- OVERVIEW LAPORAN KEGIATAN (REAL DB + TOMBOL HAPUS "X") ---
+            // 4. Overview Laporan Kegiatan (Real DB + Tombol Hapus "X")
             const overviewContainer = document.getElementById('overview-report-cards');
             let ovHtml = '';
             const reviewedEvents = MY_HISTORY.filter(h => h.extendedProps.isReviewed && h.extendedProps.laporan_evaluasi);
@@ -1976,7 +1998,6 @@
                     const stats = calculateRealAttendance(rep);
                     ovHtml += `
                         <div class="glass-card p-5 border-t-4 border-t-${colorTheme} hover:-translate-y-1 transition-transform flex flex-col h-full cursor-pointer relative group" onclick="openReportModal(${rep.id})">
-                            <!-- Tombol X Hapus Laporan -->
                             <button onclick="deleteReport(event, ${rep.id})" class="absolute top-3 right-3 w-7 h-7 rounded-full bg-slate-100 hover:bg-red-500 text-slate-400 hover:text-white flex items-center justify-center transition-colors z-10 shadow-sm" title="Hapus Laporan Evaluasi">
                                 <i class="fa-solid fa-times text-xs"></i>
                             </button>
@@ -3894,28 +3915,99 @@ function renderAbsensiList() {
             });
         }
 
-        // Helper khusus merakit 1 kotak kursi di dalam PDF
+        // Helper khusus merakit 1 kotak kursi di dalam PDF (Ukuran Lebih Besar & Proporsional)
         function generatePDFSeatBox(p, seatNumber) {
             let isFilled = p !== null && p !== undefined;
             let isGuru = isFilled && p.type === 'Guru';
             
             let bgColor = isFilled ? (isGuru ? '#fef3c7' : '#eff6ff') : '#ffffff';
-            let borderColor = isFilled ? (isGuru ? '#fcd34d' : '#bfdbfe') : '#cbd5e1';
+            let borderColor = isFilled ? (isGuru ? '#f59e0b' : '#93c5fd') : '#cbd5e1';
             let textColor = isFilled ? (isGuru ? '#92400e' : '#1e3a8a') : '#94a3b8';
-            let subColor = isFilled ? (isGuru ? '#d97706' : '#3b82f6') : '#cbd5e1';
+            let subColor = isFilled ? (isGuru ? '#d97706' : '#2563eb') : '#cbd5e1';
 
             let nameDisplay = isFilled ? p.name : '-';
-            // Potong nama jika terlalu panjang agar kotak PDF tetap simetris
-            if (nameDisplay.length > 18) nameDisplay = nameDisplay.substring(0, 16) + '..';
+            if (nameDisplay.length > 20) nameDisplay = nameDisplay.substring(0, 18) + '..';
             let roleDisplay = isFilled ? (isGuru ? 'GURU' : p.class) : 'KOSONG';
 
             return `
-                <div style="flex: 1; height: 36px; background-color: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px 3px; box-sizing: border-box; overflow: hidden; text-align: center;">
-                    <div style="font-size: 8.5px; font-weight: 800; color: ${textColor}; line-height: 1.1; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        <span style="opacity: 0.6; font-weight: 700;">${seatNumber}.</span> ${nameDisplay}
+                <div style="flex: 1; height: 42px; background-color: ${bgColor}; border: 1.5px solid ${borderColor}; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3px 4px; box-sizing: border-box; overflow: hidden; text-align: center;">
+                    <div style="font-size: 9.5px; font-weight: 800; color: ${textColor}; line-height: 1.15; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        <span style="opacity: 0.65; font-weight: 700;">${seatNumber}.</span> ${nameDisplay}
                     </div>
-                    <div style="font-size: 7px; font-weight: 700; color: ${subColor}; text-transform: uppercase; margin-top: 2px; line-height: 1;">
+                    <div style="font-size: 7.5px; font-weight: 800; color: ${subColor}; text-transform: uppercase; margin-top: 2px; line-height: 1;">
                         ${roleDisplay}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Helper merakit 1 Kerangka Bus Utuh ukuran Proporsional A4 (640px)
+        function buildSingleBusPDFCard(bus) {
+            const is22 = bus.layout === '2-2';
+            let L = bus.kapasitas % 2 !== 0 ? 5 : 6; 
+            let R = is22 ? 4 : 5; 
+            let doorSeats = R - 2; 
+            let normalSeatCount = bus.kapasitas - L - doorSeats;
+            
+            let rowsHtml = '';
+            let seatIndex = 0;
+
+            // 1. Baris Normal
+            while (normalSeatCount > 0) {
+                let seatsInThisRow = Math.min(R, normalSeatCount);
+                rowsHtml += `<div style="display: flex; gap: 7px; width: 100%; margin-bottom: 6px; align-items: center;">`;
+                for (let c = 0; c < R; c++) {
+                    if (c === 2) rowsHtml += `<div style="width: 26px; flex-shrink: 0;"></div>`;
+                    if (c < seatsInThisRow) {
+                        let p = bus.passengers ? bus.passengers[seatIndex] : null;
+                        rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
+                        seatIndex++;
+                    } else {
+                        rowsHtml += `<div style="flex: 1;"></div>`;
+                    }
+                }
+                rowsHtml += `</div>`;
+                normalSeatCount -= seatsInThisRow;
+            }
+
+            // 2. Baris Pintu (Kedua dari belakang, 2 kursi kiri jadi area Pintu)
+            rowsHtml += `<div style="display: flex; gap: 7px; width: 100%; margin-bottom: 6px; align-items: center;">
+                <div style="flex: 1; height: 42px; border: 1.5px dashed #94a3b8; border-radius: 6px; background-color: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; color: #64748b; text-transform: uppercase; box-sizing: border-box;">
+                    PINTU
+                </div>
+                <div style="flex: 1; height: 42px; border: 1.5px dashed #cbd5e1; border-radius: 6px; background-color: #f8fafc; box-sizing: border-box;"></div>
+                <div style="width: 26px; flex-shrink: 0;"></div>`;
+            for (let c = 0; c < doorSeats; c++) {
+                let p = bus.passengers ? bus.passengers[seatIndex] : null;
+                rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
+                seatIndex++;
+            }
+            rowsHtml += `</div>`;
+
+            // 3. Baris Paling Belakang (Full 5 atau 6 kursi)
+            rowsHtml += `<div style="display: flex; gap: 6px; width: 100%; margin-top: 3px; align-items: center;">`;
+            for (let c = 0; c < L; c++) {
+                let p = bus.passengers ? bus.passengers[seatIndex] : null;
+                rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
+                seatIndex++;
+            }
+            rowsHtml += `</div>`;
+
+            let badgeColor = bus.gender === 'Ikhwan' ? '#38bdf8' : (bus.gender === 'Akhwat' ? '#fb7185' : '#cbd5e1');
+
+            return `
+                <div style="width: 100%; max-width: 640px; margin: 0 auto; border: 2px solid #94a3b8; border-radius: 20px 20px 12px 12px; overflow: hidden; background-color: #f8fafc; box-sizing: border-box;">
+                    <div style="background-color: #e2e8f0; border-bottom: 2px solid #cbd5e1; padding: 9px 24px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="font-size: 9px; font-weight: 900; color: #475569; text-transform: uppercase; background: #cbd5e1; padding: 3.5px 10px; border-radius: 5px;">KERNET</div>
+                        <div style="font-size: 9px; font-weight: 800; color: #64748b; letter-spacing: 2px;">▲ DEPAN ▲</div>
+                        <div style="font-size: 9px; font-weight: 900; color: #ffffff; text-transform: uppercase; background: #334155; padding: 3.5px 12px; border-radius: 12px;">DRIVER</div>
+                    </div>
+                    <div style="background-color: #1e293b; color: #ffffff; padding: 8px 14px; text-align: center; border-bottom: 2px solid #0f172a;">
+                        <h4 style="margin: 0; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">${bus.nama}</h4>
+                        <span style="font-size: 10px; color: ${badgeColor}; font-weight: 700;">${bus.gender} • ${bus.kapasitas} Kursi (Layout ${bus.layout})</span>
+                    </div>
+                    <div style="padding: 16px;">
+                        ${rowsHtml}
                     </div>
                 </div>
             `;
@@ -3924,97 +4016,32 @@ function renderAbsensiList() {
         function downloadPDFManifest() {
             if (!currentBusConfigs || currentBusConfigs.length === 0) return showToast("Tidak ada data armada.", "error");
             
-            let content = `
-                <div style="text-align: center; margin-bottom: 18px; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                    <p style="font-size: 11px; color: #334155; margin: 0; line-height: 1.5;">
-                        <strong>Event:</strong> ${activeEventManifest.title} &nbsp;|&nbsp; 
-                        <strong>Lokasi:</strong> ${activeEventManifest.extendedProps.loc} &nbsp;|&nbsp; 
-                        <strong>Tanggal:</strong> ${activeEventManifest.start}
-                    </p>
-                </div>
-            `;
-            
-            let gridHtml = `<div style="display: flex; flex-direction: column; gap: 20px; align-items: center;">`;
-            
-            currentBusConfigs.forEach(bus => {
-                const is22 = bus.layout === '2-2';
-                
-                // --- LOGIKA SAMA PERSIS DENGAN FRONTEND (GANJIL=5, GENAP=6, PINTU KIRI) ---
-                let L = bus.kapasitas % 2 !== 0 ? 5 : 6; 
-                let R = is22 ? 4 : 5; 
-                let doorSeats = R - 2; 
-                let normalSeatCount = bus.kapasitas - L - doorSeats;
-                
-                let rowsHtml = '';
-                let seatIndex = 0;
-
-                // 1. Baris Normal (Depan sampai sebelum pintu)
-                while (normalSeatCount > 0) {
-                    let seatsInThisRow = Math.min(R, normalSeatCount);
-                    rowsHtml += `<div style="display: flex; gap: 6px; width: 100%; margin-bottom: 5px; align-items: center;">`;
-                    for (let c = 0; c < R; c++) {
-                        if (c === 2) rowsHtml += `<div style="width: 22px; flex-shrink: 0;"></div>`; // Lorong tengah
-                        if (c < seatsInThisRow) {
-                            let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                            rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
-                            seatIndex++;
-                        } else {
-                            rowsHtml += `<div style="flex: 1;"></div>`; // Ruang kosong sisa
-                        }
-                    }
-                    rowsHtml += `</div>`;
-                    normalSeatCount -= seatsInThisRow;
-                }
-
-                // 2. Baris Pintu (Kedua dari belakang, 2 kursi kiri jadi area Pintu)
-                rowsHtml += `<div style="display: flex; gap: 6px; width: 100%; margin-bottom: 5px; align-items: center;">`;
-                rowsHtml += `
-                    <div style="flex: 1; height: 36px; border: 1px dashed #94a3b8; border-radius: 5px; background-color: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 900; color: #64748b; text-transform: uppercase; box-sizing: border-box;">
-                        PINTU
+            let content = '';
+            currentBusConfigs.forEach((bus, idx) => {
+                // Bus ke-2 dan seterusnya otomatis pindah ke halaman baru (1 Halaman = 1 Bus)
+                const pageBreakStyle = idx > 0 ? 'page-break-before: always; break-before: page; padding-top: 15px;' : '';
+                const infoHeader = idx === 0 ? `
+                    <div style="text-align: center; margin-bottom: 14px; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; max-width: 640px; margin-left: auto; margin-right: auto;">
+                        <p style="font-size: 11px; color: #334155; margin: 0; line-height: 1.5;">
+                            <strong>Event:</strong> ${activeEventManifest.title} &nbsp;|&nbsp; 
+                            <strong>Lokasi:</strong> ${activeEventManifest.extendedProps.loc} &nbsp;|&nbsp; 
+                            <strong>Tanggal:</strong> ${activeEventManifest.start}
+                        </p>
                     </div>
-                    <div style="flex: 1; height: 36px; border: 1px dashed #cbd5e1; border-radius: 5px; background-color: #f8fafc; box-sizing: border-box;"></div>
+                ` : `
+                    <div style="text-align: center; margin-bottom: 10px;">
+                        <span style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">${activeEventManifest.title} • ${activeEventManifest.extendedProps.loc} (Armada ${idx + 1} dari ${currentBusConfigs.length})</span>
+                    </div>
                 `;
-                rowsHtml += `<div style="width: 22px; flex-shrink: 0;"></div>`; // Lorong tengah
-                for (let c = 0; c < doorSeats; c++) {
-                    let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                    rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
-                    seatIndex++;
-                }
-                rowsHtml += `</div>`;
 
-                // 3. Baris Paling Belakang (Full 5 atau 6 tanpa lorong tengah)
-                rowsHtml += `<div style="display: flex; gap: 5px; width: 100%; margin-top: 2px; align-items: center;">`;
-                for (let c = 0; c < L; c++) {
-                    let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                    rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
-                    seatIndex++;
-                }
-                rowsHtml += `</div>`;
-
-                let badgeColor = bus.gender === 'Ikhwan' ? '#38bdf8' : (bus.gender === 'Akhwat' ? '#fb7185' : '#cbd5e1');
-
-                // BUNGKUS DALAM .pdf-bus-card DENGAN page-break-inside: avoid AGAR ANTI KEPOTONG
-                gridHtml += `
-                <div class="pdf-bus-card" style="width: 100%; max-width: 520px; border: 2px solid #94a3b8; border-radius: 18px 18px 10px 10px; overflow: hidden; background-color: #f8fafc; page-break-inside: avoid; break-inside: avoid; margin-bottom: 10px; box-sizing: border-box;">
-                    <!-- Area Dashboard Kernet & Driver -->
-                    <div style="background-color: #e2e8f0; border-bottom: 2px solid #cbd5e1; padding: 8px 20px; display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-size: 8px; font-weight: 900; color: #64748b; text-transform: uppercase; background: #cbd5e1; padding: 3px 8px; border-radius: 4px;">KERNET</div>
-                        <div style="font-size: 8px; font-weight: 700; color: #94a3b8; letter-spacing: 2px;">▲ DEPAN ▲</div>
-                        <div style="font-size: 8px; font-weight: 900; color: #ffffff; text-transform: uppercase; background: #334155; padding: 3px 10px; border-radius: 12px;">DRIVER</div>
+                content += `
+                    <div class="pdf-bus-card" style="${pageBreakStyle} page-break-inside: avoid; break-inside: avoid;">
+                        ${infoHeader}
+                        ${buildSingleBusPDFCard(bus)}
                     </div>
-                    <!-- Header Nama Bus -->
-                    <div style="background-color: #1e293b; color: #ffffff; padding: 6px 12px; text-align: center; border-bottom: 2px solid #0f172a;">
-                        <h4 style="margin: 0; font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">${bus.nama}</h4>
-                        <span style="font-size: 9px; color: ${badgeColor}; font-weight: 700;">${bus.gender} • ${bus.kapasitas} Kursi (Layout ${bus.layout})</span>
-                    </div>
-                    <!-- Isi Kursi -->
-                    <div style="padding: 12px;">
-                        ${rowsHtml}
-                    </div>
-                </div>`;
+                `;
             });
             
-            content += gridHtml + `</div>`;
             printA4PDF(`PLOTTING_ARMADA_BUS_${activeEventManifest.title.replace(/\s+/g, '_')}`, content, false);
         }
 
@@ -4302,7 +4329,7 @@ function renderAbsensiList() {
             openModal('report-modal');
         }
 
-        // Fungsi Cetak PDF Laporan Akhir (Lengkap: Finansial + E-Absensi + Denah Bus + Lampiran Nota)
+       // Fungsi Cetak PDF Laporan Akhir (Halaman 1: Finansial, Halaman 2+: 1 Bus per Halaman, Halaman Akhir: Nota)
         function downloadPDFLaporanAkhir() {
             const ev = MY_HISTORY.find(r => r.id === activeReportEventId);
             if (!ev || !ev.extendedProps.laporan_evaluasi) return showToast("Data laporan tidak ditemukan.", "error");
@@ -4317,7 +4344,7 @@ function renderAbsensiList() {
             const grandTotal = totalTicket + totalFood + totalTrans;
             const starStr = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
 
-            // 1. Rakit Bagian Ringkasan Eksekutif & Finansial
+            // 1. HALAMAN 1: Ringkasan Eksekutif, Kehadiran, Evaluasi & Realisasi Biaya
             let html = `
                 <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
                     <div>
@@ -4348,7 +4375,7 @@ function renderAbsensiList() {
                     </div>
                 </div>
 
-                <div style="border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px; margin-bottom: 20px;">
+                <div style="border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px; margin-bottom: 10px;">
                     <h4 style="margin: 0 0 10px 0; font-size: 11px; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Realisasi Biaya Operasional (Berdasarkan E-Absensi)</h4>
                     <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                         <tr style="border-bottom: 1px dashed #e2e8f0;">
@@ -4371,69 +4398,40 @@ function renderAbsensiList() {
                 </div>
             `;
 
-            // 2. Lampirkan Rangkuman Denah Bus jika ada
+            // 2. HALAMAN 2+: Lampiran Denah Bus (Judul menyatu dengan Bus, 1 Halaman = 1 Bus Proporsional)
             if (stats.busConfigs && stats.busConfigs.length > 0) {
-                html += `<h4 style="margin: 15px 0 10px 0; font-size: 12px; color: #1e3a8a; text-transform: uppercase; text-align: center;">Lampiran Denah Plotting Armada Bus</h4>`;
-                html += `<div style="display: flex; flex-direction: column; gap: 16px; align-items: center;">`;
-                stats.busConfigs.forEach(bus => {
-                    const is22 = bus.layout === '2-2';
-                    let L = bus.kapasitas % 2 !== 0 ? 5 : 6; 
-                    let R = is22 ? 4 : 5; 
-                    let doorSeats = R - 2; 
-                    let normalSeatCount = bus.kapasitas - L - doorSeats;
-                    let rowsHtml = ''; let seatIndex = 0;
-
-                    while (normalSeatCount > 0) {
-                        let seatsInThisRow = Math.min(R, normalSeatCount);
-                        rowsHtml += `<div style="display: flex; gap: 5px; width: 100%; margin-bottom: 4px; align-items: center;">`;
-                        for (let c = 0; c < R; c++) {
-                            if (c === 2) rowsHtml += `<div style="width: 18px; flex-shrink: 0;"></div>`;
-                            if (c < seatsInThisRow) {
-                                let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                                rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
-                                seatIndex++;
-                            } else { rowsHtml += `<div style="flex: 1;"></div>`; }
-                        }
-                        rowsHtml += `</div>`;
-                        normalSeatCount -= seatsInThisRow;
-                    }
-
-                    rowsHtml += `<div style="display: flex; gap: 5px; width: 100%; margin-bottom: 4px; align-items: center;">
-                        <div style="flex: 1; height: 36px; border: 1px dashed #94a3b8; border-radius: 5px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 900; color: #64748b;">PINTU</div>
-                        <div style="flex: 1; height: 36px; border: 1px dashed #cbd5e1; border-radius: 5px; background: #f8fafc;"></div>
-                        <div style="width: 18px; flex-shrink: 0;"></div>`;
-                    for (let c = 0; c < doorSeats; c++) {
-                        let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                        rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
-                        seatIndex++;
-                    }
-                    rowsHtml += `</div>`;
-
-                    rowsHtml += `<div style="display: flex; gap: 5px; width: 100%; margin-top: 2px; align-items: center;">`;
-                    for (let c = 0; c < L; c++) {
-                        let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                        rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
-                        seatIndex++;
-                    }
-                    rowsHtml += `</div>`;
-
+                stats.busConfigs.forEach((bus, idx) => {
                     html += `
-                    <div class="pdf-bus-card" style="width: 100%; max-width: 500px; border: 2px solid #94a3b8; border-radius: 14px; overflow: hidden; background: #f8fafc; page-break-inside: avoid; break-inside: avoid;">
-                        <div style="background: #1e293b; color: #fff; padding: 5px 10px; text-align: center;">
-                            <strong style="font-size: 11px; text-transform: uppercase;">${bus.nama} (${bus.gender} • ${bus.kapasitas} Kursi)</strong>
+                        <div class="pdf-bus-card" style="page-break-before: always; break-before: page; page-break-inside: avoid; break-inside: avoid; padding-top: 10px;">
+                            <div style="text-align: center; margin-bottom: 14px; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; max-width: 640px; margin-left: auto; margin-right: auto;">
+                                <h4 style="margin: 0; font-size: 14px; color: #1e3a8a; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">
+                                    Lampiran Denah Plotting Armada Bus ${stats.busConfigs.length > 1 ? `(${idx + 1}/${stats.busConfigs.length})` : ''}
+                                </h4>
+                                <p style="margin: 3px 0 0 0; font-size: 10px; color: #64748b; font-weight: bold;">
+                                    ${ev.title} • ${ev.extendedProps.loc} (${ev.start})
+                                </p>
+                            </div>
+                            ${buildSingleBusPDFCard(bus)}
                         </div>
-                        <div style="padding: 10px;">${rowsHtml}</div>
-                    </div>`;
+                    `;
                 });
-                html += `</div>`;
             }
 
-            // 3. Lampirkan Foto Nota jika diupload
+            // 3. HALAMAN TERAKHIR KHUSUS: Lampiran Foto Bukti Transaksi / Nota (Terpisah Halaman dari Bus)
             if (rep.notaUrl) {
                 html += `
-                    <div class="pdf-bus-card" style="margin-top: 20px; text-align: center; page-break-inside: avoid; break-inside: avoid;">
-                        <h4 style="margin: 0 0 10px 0; font-size: 12px; color: #1e3a8a; text-transform: uppercase;">Lampiran Bukti Transaksi / Nota</h4>
-                        <img src="${rep.notaUrl}" style="max-width: 100%; max-height: 550px; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; display: inline-block;">
+                    <div class="pdf-bus-card" style="page-break-before: always; break-before: page; page-break-inside: avoid; break-inside: avoid; padding-top: 10px; text-align: center;">
+                        <div style="text-align: center; margin-bottom: 16px; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; max-width: 640px; margin-left: auto; margin-right: auto;">
+                            <h4 style="margin: 0; font-size: 14px; color: #1e3a8a; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">
+                                Lampiran Bukti Transaksi / Nota Operasional
+                            </h4>
+                            <p style="margin: 3px 0 0 0; font-size: 10px; color: #64748b; font-weight: bold;">
+                                ${ev.title} • ${ev.extendedProps.loc} (${ev.start})
+                            </p>
+                        </div>
+                        <div style="max-width: 640px; margin: 0 auto; padding: 12px; border: 1.5px solid #cbd5e1; border-radius: 14px; background: #f8fafc;">
+                            <img src="${rep.notaUrl}" style="max-width: 100%; max-height: 760px; object-fit: contain; border-radius: 8px; display: inline-block;">
+                        </div>
                     </div>
                 `;
             }
