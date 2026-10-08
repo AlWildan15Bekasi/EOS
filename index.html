@@ -900,7 +900,12 @@
             <p class="text-xs text-slate-500 mb-4 font-medium">Unggah file .csv untuk memasukkan data secara massal.</p>
 
             <div class="bg-blue-50 border border-blue-100 p-4 rounded-xl mb-5">
-                <p class="text-xs font-bold text-aw-navy mb-2">PANDUAN FORMAT KOLOM:</p>
+                <div class="flex justify-between items-center mb-2">
+                    <p class="text-xs font-bold text-aw-navy">PANDUAN FORMAT KOLOM:</p>
+                    <button type="button" onclick="downloadCSVTemplate()" class="text-[10px] font-black text-aw-blue bg-white hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 shadow-sm transition flex items-center gap-1">
+                        <i class="fa-solid fa-download"></i> Unduh Template
+                    </button>
+                </div>
                 <ul id="csv-guide-list" class="text-[11px] text-slate-600 space-y-1.5 font-medium list-disc list-inside">
                     <!-- Dinamis -->
                 </ul>
@@ -4605,38 +4610,187 @@ function renderAbsensiList() {
             printA4PDF(`LAPORAN_EVALUASI_${ev.title.replace(/\s+/g, '_')}`, html, false);
         }
         
-        // ==========================================
-        // IMPORT CSV LOGIC
+       // ==========================================
+        // IMPORT CSV LOGIC (REAL SUPABASE BULK INSERT)
         // ==========================================
         function openImportModal(type) {
             document.getElementById('csv-type').value = type;
+            document.getElementById('csv-upload').value = '';
+            document.getElementById('csv-filename').innerText = 'Klik untuk pilih file .csv';
             const guide = document.getElementById('csv-guide-list');
             if(type === 'siswa') {
-                guide.innerHTML = `<li><strong class="text-slate-800">Kolom 1:</strong> Nama Lengkap Siswa</li><li><strong class="text-slate-800">Kolom 2:</strong> Jenjang (SD/SMP/SMA)</li><li><strong class="text-slate-800">Kolom 3:</strong> Kelas (Cth: 1 INTER 1)</li>`;
+                guide.innerHTML = `
+                    <li><strong class="text-slate-800">Kolom 1:</strong> Nama Lengkap Siswa</li>
+                    <li><strong class="text-slate-800">Kolom 2:</strong> Jenjang (SD / SMP / SMA)</li>
+                    <li><strong class="text-slate-800">Kolom 3:</strong> Kelas / Rombel (Cth: 1 INTER 1)</li>
+                `;
             } else {
-                guide.innerHTML = `<li><strong class="text-slate-800">Kolom 1:</strong> Nama Lengkap (beserta gelar)</li><li><strong class="text-slate-800">Kolom 2:</strong> Posisi / Jabatan</li>`;
+                guide.innerHTML = `
+                    <li><strong class="text-slate-800">Kolom 1:</strong> Nama Lengkap & Gelar</li>
+                    <li><strong class="text-slate-800">Kolom 2:</strong> Posisi / Jabatan</li>
+                `;
             }
             openModal('import-csv-modal');
         }
 
-        function handleImportCSV(e) {
-            e.preventDefault();
+        // Fungsi Unduh Contoh Template CSV agar user tidak salah format
+        function downloadCSVTemplate() {
             const type = document.getElementById('csv-type').value;
-            const btn = document.getElementById('btn-import-csv');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = `<div class="loader-spin border-white border-t-transparent mx-auto"></div>`; btn.disabled = true;
+            let csvContent = '';
+            let fileName = '';
 
-            setTimeout(() => {
-                showToast(`Data CSV berhasil di-import ke Database!`, 'success');
-                closeModal('import-csv-modal');
-                if(type === 'siswa') renderStudents();
-                if(type === 'guru') renderTeachers();
-                btn.innerHTML = originalText; btn.disabled = false;
-                document.getElementById('csv-upload').value = '';
-                document.getElementById('csv-filename').innerText = 'Klik untuk pilih file .csv';
-            }, 1200);
+            if (type === 'siswa') {
+                csvContent = 'Nama Lengkap,Jenjang,Kelas\nMuhammad Al Fatih,SD,1 INTER 1\nAisyah Humaira,SMP,7 AE 2\nUmar Bin Khattab,SMA,10 IPA 1';
+                fileName = 'Template_Import_Siswa.csv';
+            } else {
+                csvContent = 'Nama Lengkap,Jabatan\n"Ahmad Fulan, S.Pd",Wali Kelas 1\n"Siti Aminah, M.Pd",Koordinator Event';
+                fileName = 'Template_Import_Guru.csv';
+            }
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', fileName);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
+        // Helper membedah 1 baris CSV (Aman terhadap tanda kutip & koma di dalam gelar nama)
+        function parseCSVLine(line, delimiter) {
+            let result = [];
+            let curVal = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                let char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === delimiter && !inQuotes) {
+                    result.push(curVal.trim());
+                    curVal = '';
+                } else {
+                    curVal += char;
+                }
+            }
+            result.push(curVal.trim());
+            return result.map(val => val.replace(/^["']|["']$/g, '').trim());
+        }
+
+        // Helper mengubah teks menjadi Proper Case (Huruf Kapital di Awal Kata)
+        function toProperCase(str) {
+            return str.replace(/\w\S*/g, txt => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+        }
+
+        async function handleImportCSV(e) {
+            e.preventDefault();
+            const type = document.getElementById('csv-type').value;
+            const fileInp = document.getElementById('csv-upload');
+            const btn = document.getElementById('btn-import-csv');
+            const originalText = btn.innerHTML;
+
+            if (!fileInp.files || fileInp.files.length === 0) {
+                return showToast("Pilih file .csv terlebih dahulu!", "error");
+            }
+
+            const file = fileInp.files[0];
+            btn.innerHTML = `<div class="loader-spin border-white border-t-transparent mx-auto"></div>`;
+            btn.disabled = true;
+
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                try {
+                    const text = event.target.result;
+                    // Pecah per baris dan buang baris kosong
+                    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+                    if (lines.length === 0) throw new Error("File CSV kosong!");
+
+                    // Deteksi otomatis pemisah kolom: titik koma (;) atau koma (,)
+                    const firstLine = lines[0];
+                    const delimiter = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+
+                    let payloadArray = [];
+
+                    lines.forEach((line, index) => {
+                        const cols = parseCSVLine(line, delimiter);
+                        if (cols.length < 2) return; // Lewati baris yang kolomnya tidak lengkap
+
+                        // Deteksi & lewati baris Header jika baris pertama mengandung kata kunci judul kolom
+                        const col0Lower = cols[0].toLowerCase();
+                        const col1Lower = cols[1].toLowerCase();
+                        if (index === 0 && (col0Lower.includes('nama') || col1Lower === 'jenjang' || col1Lower.includes('jabatan') || col1Lower.includes('posisi'))) {
+                            return;
+                        }
+
+                        if (type === 'siswa') {
+                            const rawName = cols[0];
+                            let rawJenjang = (cols[1] || 'SD').toUpperCase().trim();
+                            const rawKelas = (cols[2] || '').toUpperCase().trim();
+
+                            if (!rawName || !rawKelas) return;
+                            if (!['SD', 'SMP', 'SMA'].includes(rawJenjang)) rawJenjang = 'SD';
+
+                            payloadArray.push({
+                                cabang_id: sessionCabang.id,
+                                nama: toProperCase(rawName),
+                                jenjang: rawJenjang,
+                                kelas: rawKelas
+                            });
+                        } else if (type === 'guru') {
+                            const rawName = cols[0];
+                            // Jika gelar tidak pakai tanda kutip dan terpisah koma, gabungkan kolom 2 dst sebagai jabatan atau gelar
+                            const rawPos = cols[1] || 'Guru / Staff';
+                            if (!rawName) return;
+
+                            payloadArray.push({
+                                cabang_id: sessionCabang.id,
+                                nama: rawName,
+                                jabatan: rawPos
+                            });
+                        }
+                    });
+
+                    if (payloadArray.length === 0) {
+                        throw new Error("Tidak ada baris data valid yang bisa di-import. Cek format kolom CSV Anda.");
+                    }
+
+                    const targetTable = type === 'siswa' ? 'siswa' : 'guru';
+                    const { error } = await supabaseApp.from(targetTable).insert(payloadArray);
+                    if (error) throw error;
+
+                    showToast(`Berhasil meng-import ${payloadArray.length} data ${type.toUpperCase()} ke Database!`, 'success');
+                    closeModal('import-csv-modal');
+
+                    // Refresh data master & tabel
+                    await fetchMasterData();
+                    renderInformation();
+                    if (type === 'siswa') {
+                        // Reset dropdown filter kelas agar kelas baru dari CSV ikut muncul
+                        const filterDropdown = document.getElementById('filter-kelas-siswa');
+                        if (filterDropdown) filterDropdown.innerHTML = '<option value="Semua">Semua Kelas</option>';
+                        renderStudents();
+                    } else {
+                        renderTeachers();
+                    }
+                } catch (err) {
+                    console.error("CSV Import Error:", err);
+                    showToast(err.message || "Gagal meng-import file CSV.", "error");
+                } finally {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    fileInp.value = '';
+                    document.getElementById('csv-filename').innerText = 'Klik untuk pilih file .csv';
+                }
+            };
+
+            reader.onerror = function() {
+                showToast("Gagal membaca file CSV.", "error");
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            };
+
+            reader.readAsText(file);
+        }
         // Init App
         document.getElementById('view-login').classList.remove('hidden');
     </script>
