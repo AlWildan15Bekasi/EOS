@@ -783,10 +783,13 @@
 
                     <!-- FASE 2 & 3: Visual Denah Bus -->
                     <div id="man-fase-2" class="flex-1 hidden overflow-hidden flex-col bg-slate-100 transition-all duration-500">
-                        <!-- Toolbar Denah -->
-                        <div class="bg-white p-3 border-b border-slate-200 flex justify-between items-center shadow-sm shrink-0">
+                       <!-- Toolbar Denah -->
+                        <div class="bg-white p-3 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 shadow-sm shrink-0">
                             <button onclick="backToKonfigBus()" class="text-xs font-bold text-slate-500 hover:text-aw-blue px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-2"><i class="fa-solid fa-arrow-left"></i> Kembali ke Konfigurasi</button>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button id="btn-toggle-layout" onclick="toggleEditLayoutMode()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3.5 py-1.5 rounded-lg text-xs font-black shadow-sm transition flex items-center gap-2" title="Klik untuk menghapus/menambah kotak kursi secara manual">
+                                    <i class="fa-solid fa-screwdriver-wrench"></i> Edit Layout
+                                </button>
                                 <button onclick="autoPlotBus()" class="bg-aw-yellow hover:bg-amber-400 text-aw-navy px-4 py-1.5 rounded-lg text-xs font-black shadow-sm transition flex items-center gap-2">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Plot
                                 </button>
@@ -3368,13 +3371,14 @@
             document.getElementById('man-fase-1').classList.remove('hidden');
         }
 
-// --- INTI DARI STAGE 9: MELUKIS DENAH BUS ---
+// --- INTI DARI STAGE 9: MELUKIS DENAH BUS & CUSTOM SEAT BUILDER ---
         
         let pendingPlotSiswa = [];
         let pendingPlotGuru = [];
         let selectedPassenger = null;
         let lastLoadedEventId = null;
-        let actionSeatData = null; // Menyimpan data sementara untuk modal aksi
+        let actionSeatData = null;
+        let isEditLayoutMode = false; // Saklar Mode Edit Tata Letak Kursi Manual
 
         // Helper pemotong nama otomatis
         function formatName(name) {
@@ -3385,7 +3389,48 @@
             return `${words[0]} ${words[1]}<br>${words[2]}`;
         }
 
+        // Helper mengecek apakah index slot kursi dinonaktifkan (diubah jadi lorong/ruang kosong)
+        function isSeatDisabled(bus, slotIdx) {
+            return Array.isArray(bus.disabledSeats) && bus.disabledSeats.includes(slotIdx);
+        }
+
+        // Helper menghitung jumlah kursi aktif sebenarnya
+        function getActiveSeatCount(bus) {
+            const disabledCount = Array.isArray(bus.disabledSeats) ? bus.disabledSeats.length : 0;
+            return bus.kapasitas - disabledCount;
+        }
+
+        // Saklar Mode Edit Tata Letak
+        function toggleEditLayoutMode() {
+            isEditLayoutMode = !isEditLayoutMode;
+            selectedPassenger = null;
+            updateEditLayoutBtnUI();
+            renderVisualDenahBus();
+            if (isEditLayoutMode) {
+                showToast("Mode Edit Layout Aktif: Klik kursi mana saja untuk menghapus jadi lorong, atau klik lorong untuk mengembalikan kursi.", "info");
+            } else {
+                showToast("Mode Edit Layout Selesai. Jangan lupa klik Simpan!", "success");
+            }
+        }
+
+        function updateEditLayoutBtnUI() {
+            const btn = document.getElementById('btn-toggle-layout');
+            if (!btn) return;
+            if (isEditLayoutMode) {
+                btn.className = "bg-rose-500 hover:bg-rose-600 text-white border border-rose-600 px-3.5 py-1.5 rounded-lg text-xs font-black shadow-md transition flex items-center gap-2 animate-pulse";
+                btn.innerHTML = `<i class="fa-solid fa-check"></i> Selesai Edit Layout`;
+            } else {
+                btn.className = "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3.5 py-1.5 rounded-lg text-xs font-black shadow-sm transition flex items-center gap-2";
+                btn.innerHTML = `<i class="fa-solid fa-screwdriver-wrench"></i> Edit Layout`;
+            }
+        }
+
         async function savePlottingToDB() {
+            if (isEditLayoutMode) {
+                isEditLayoutMode = false;
+                updateEditLayoutBtnUI();
+                renderVisualDenahBus();
+            }
             const btn = document.getElementById('btn-save-plot');
             const originalText = btn.innerHTML;
             btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan...`; 
@@ -3397,7 +3442,7 @@
                     .eq('id', activeEventManifest.id);
                 
                 if (error) throw error;
-                showToast("Susunan kursi berhasil dikunci ke Database!", "success");
+                showToast("Susunan kursi & tata letak berhasil dikunci ke Database!", "success");
             } catch (err) {
                 console.error(err); showToast("Gagal menyimpan susunan kursi.", "error");
             } finally {
@@ -3406,6 +3451,9 @@
         }
 
         function initVisualDenahBus() {
+            isEditLayoutMode = false;
+            updateEditLayoutBtnUI();
+
             const rawSiswa = typeof activeEventManifest.extendedProps.daftar_siswa === 'string' ? JSON.parse(activeEventManifest.extendedProps.daftar_siswa) : (activeEventManifest.extendedProps.daftar_siswa || []);
             const rawGuru = typeof activeEventManifest.extendedProps.daftar_guru === 'string' ? JSON.parse(activeEventManifest.extendedProps.daftar_guru) : (activeEventManifest.extendedProps.daftar_guru || []);
 
@@ -3420,10 +3468,17 @@
 
             let seatedIds = new Set();
             currentBusConfigs.forEach(b => {
-                if(!b.passengers || b.passengers.length !== b.kapasitas) {
+                if (!Array.isArray(b.disabledSeats)) b.disabledSeats = [];
+                if (!b.passengers || b.passengers.length !== b.kapasitas) {
                     b.passengers = new Array(b.kapasitas).fill(null);
                 } else {
-                    b.passengers.forEach(p => { if(p && p.id) seatedIds.add(p.id); });
+                    b.passengers.forEach((p, idx) => {
+                        if (isSeatDisabled(b, idx)) {
+                            b.passengers[idx] = null;
+                        } else if (p && p.id) {
+                            seatedIds.add(p.id);
+                        }
+                    });
                 }
             });
 
@@ -3441,17 +3496,19 @@
 
             let busHtml = '';
             currentBusConfigs.forEach(bus => {
+                if (!Array.isArray(bus.disabledSeats)) bus.disabledSeats = [];
                 let colorTheme = bus.gender === 'Ikhwan' ? 'text-aw-blue' : (bus.gender === 'Akhwat' ? 'text-rose-500' : 'text-slate-600');
                 const is22 = bus.layout === '2-2';
                 
-                // --- LOGIKA BARU: GANJIL = 5, GENAP = 6 & PINTU KIRI BELAKANG ---
+                // --- LOGIKA STANDAR: GANJIL = 5, GENAP = 6 & PINTU KIRI BELAKANG ---
                 let L = bus.kapasitas % 2 !== 0 ? 5 : 6; 
-                let R = is22 ? 4 : 5; // Standar per baris
-                let doorSeats = R - 2; // Pintu memakan 2 kursi di kiri
+                let R = is22 ? 4 : 5; 
+                let doorSeats = R - 2; 
                 let normalSeatCount = bus.kapasitas - L - doorSeats;
                 
                 let seatsHtml = '<div class="flex flex-col gap-2 p-2">';
                 let seatIndex = 0;
+                let displayNum = 1; // Nomor kursi aktif yang tampil
 
                 // 1. Baris Normal (Depan sampai sebelum pintu)
                 while (normalSeatCount > 0) {
@@ -3460,9 +3517,12 @@
                     for (let c = 0; c < R; c++) {
                         if (c === 2) seatsHtml += `<div class="w-4 shrink-0"></div>`; // Lorong tengah
                         if (c < seatsInThisRow) {
-                            seatsHtml += generateSeatHtml(bus, seatIndex++);
+                            const isDis = isSeatDisabled(bus, seatIndex);
+                            seatsHtml += generateSeatHtml(bus, seatIndex, isDis ? null : displayNum);
+                            if (!isDis) displayNum++;
+                            seatIndex++;
                         } else {
-                            seatsHtml += `<div class="flex-1"></div>`; // Ruang kosong sisa
+                            seatsHtml += `<div class="flex-1"></div>`;
                         }
                     }
                     seatsHtml += `</div>`;
@@ -3474,21 +3534,31 @@
                 seatsHtml += `<div class="flex-1 border border-dashed border-slate-300/50 rounded flex items-center justify-center bg-slate-200/30 text-[8px] text-slate-400 font-bold uppercase"><i class="fa-solid fa-door-open mr-1"></i>Pintu</div><div class="flex-1 border border-dashed border-slate-300/50 rounded flex items-center justify-center bg-slate-200/20"></div>`; 
                 seatsHtml += `<div class="w-4 shrink-0"></div>`; // Lorong
                 for (let c = 0; c < doorSeats; c++) {
-                    seatsHtml += generateSeatHtml(bus, seatIndex++);
+                    const isDis = isSeatDisabled(bus, seatIndex);
+                    seatsHtml += generateSeatHtml(bus, seatIndex, isDis ? null : displayNum);
+                    if (!isDis) displayNum++;
+                    seatIndex++;
                 }
                 seatsHtml += `</div>`;
 
                 // 3. Baris Paling Belakang (Full 5 atau 6 tanpa lorong tengah)
                 seatsHtml += `<div class="flex justify-between gap-1 w-full mt-1">`;
                 for (let c = 0; c < L; c++) {
-                    seatsHtml += generateSeatHtml(bus, seatIndex++);
+                    const isDis = isSeatDisabled(bus, seatIndex);
+                    seatsHtml += generateSeatHtml(bus, seatIndex, isDis ? null : displayNum);
+                    if (!isDis) displayNum++;
+                    seatIndex++;
                 }
                 seatsHtml += `</div>`;
                 
                 seatsHtml += '</div>';
 
+                const activeCap = getActiveSeatCount(bus);
+                const borderEditClass = isEditLayoutMode ? 'border-rose-400 ring-2 ring-rose-200' : 'border-slate-300';
+
                 busHtml += `
-                <div class="w-72 bg-white rounded-t-3xl rounded-b-xl shadow-lg border-2 border-slate-300 flex flex-col shrink-0 overflow-hidden relative">
+                <div class="w-72 bg-white rounded-t-3xl rounded-b-xl shadow-lg border-2 ${borderEditClass} flex flex-col shrink-0 overflow-hidden relative transition-all">
+                    ${isEditLayoutMode ? `<div class="bg-rose-500 text-white text-[9px] font-black uppercase tracking-widest py-1 text-center"><i class="fa-solid fa-screwdriver-wrench mr-1"></i>Klik Kursi = Hapus / Tambah</div>` : ''}
                     <div class="h-20 bg-slate-200 border-b-4 border-slate-300 relative shrink-0">
                         <div class="absolute inset-x-4 top-2 h-6 bg-cyan-100/50 border border-cyan-200 rounded-t-full shadow-inner opacity-60"></div>
                         <div class="absolute bottom-1.5 left-4 flex flex-col items-center">
@@ -3502,7 +3572,7 @@
                     </div>
                     <div class="p-2 bg-slate-800 text-center border-b-2 border-slate-900 shadow-md z-10">
                         <h4 class="text-white font-black text-sm uppercase tracking-widest">${bus.nama}</h4>
-                        <p class="text-[9px] ${colorTheme} font-bold bg-white/10 px-2 py-0.5 rounded inline-block mt-0.5">${bus.gender} • ${bus.kapasitas} Kursi</p>
+                        <p class="text-[9px] ${colorTheme} font-bold bg-white/10 px-2 py-0.5 rounded inline-block mt-0.5">${bus.gender} • ${activeCap} Kursi Aktif</p>
                     </div>
                     <div class="flex-1 overflow-y-auto custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-slate-50 p-2 flex flex-col gap-2">
                         ${seatsHtml}
@@ -3513,13 +3583,39 @@
             canvas.innerHTML = busHtml;
         }
         
-        function generateSeatHtml(bus, seatIndex) {
+        function generateSeatHtml(bus, seatIndex, displayNum) {
+            const isDis = isSeatDisabled(bus, seatIndex);
+
+            // Jika slot kursi ini dinonaktifkan (diubah jadi lorong/ruang kosong)
+            if (isDis) {
+                if (isEditLayoutMode) {
+                    return `
+                    <div onclick="handleSeatClick('${bus.id}', ${seatIndex})" title="Klik untuk mengembalikan menjadi Kursi" class="flex-1 h-10 border-2 border-dashed border-emerald-400 bg-emerald-50/70 text-emerald-600 rounded flex flex-col items-center justify-center text-[8px] font-black cursor-pointer hover:bg-emerald-100 transition-all">
+                        <i class="fa-solid fa-rotate-left text-[10px]"></i>
+                        <span class="uppercase text-[7px] mt-0.5">Jadi Kursi</span>
+                    </div>`;
+                } else {
+                    return `
+                    <div class="flex-1 h-10 border border-dashed border-slate-300/60 bg-slate-200/25 rounded flex items-center justify-center text-[7px] text-slate-400 font-bold uppercase select-none">
+                        Lorong
+                    </div>`;
+                }
+            }
+
             let p = bus.passengers[seatIndex];
             let boxClass = p ? (p.type === 'Guru' ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-blue-50 border-blue-200 text-aw-navy') : 'bg-white border-slate-200 text-slate-400';
             let selClass = (selectedPassenger && selectedPassenger.source === 'bus' && selectedPassenger.busId === bus.id && selectedPassenger.seatIdx === seatIndex) ? 'ring-2 ring-aw-yellow ring-offset-1 border-aw-yellow z-10 scale-105 shadow-md bg-yellow-50' : '';
             
-            let seatName = p ? formatName(p.name) : '<i class="fa-solid fa-plus opacity-30"></i>';
-            let titleHover = p ? p.name : 'Kursi Kosong (Klik untuk isi)';
+            if (isEditLayoutMode) {
+                return `
+                <div onclick="handleSeatClick('${bus.id}', ${seatIndex})" title="Klik untuk menghapus kursi ini menjadi Lorong/Kosong" class="flex-1 h-10 bg-rose-50 border-2 border-rose-300 text-rose-600 rounded shadow-sm flex flex-col items-center justify-center text-[8px] leading-tight font-black cursor-pointer hover:bg-rose-500 hover:text-white transition-all relative px-0.5 py-1 group">
+                    <span class="text-[7px] opacity-70">#${displayNum}</span>
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </div>`;
+            }
+
+            let seatName = p ? formatName(p.name) : `<span class="opacity-40 text-[8px]">#${displayNum}</span>`;
+            let titleHover = p ? `${ displayNum }. ${p.name}` : `Kursi #${displayNum} Kosong (Klik untuk isi)`;
 
             return `
             <div onclick="handleSeatClick('${bus.id}', ${seatIndex})" title="${titleHover}" class="flex-1 h-10 ${boxClass} ${selClass} border rounded shadow-sm flex flex-col items-center justify-center text-[8.5px] leading-[1.15] font-bold cursor-pointer hover:border-aw-yellow transition-all overflow-hidden relative px-0.5 py-1">
@@ -3562,6 +3658,7 @@
         }
 
         function handleWaitRoomClick(type, idx) {
+            if (isEditLayoutMode) return showToast("Matikan 'Edit Layout' terlebih dahulu untuk memplot penumpang!", "info");
             let pList = type === 'Guru' ? pendingPlotGuru : pendingPlotSiswa;
             if(selectedPassenger && selectedPassenger.source === 'wait' && selectedPassenger.listType === type && selectedPassenger.listIdx === idx) {
                 selectedPassenger = null; 
@@ -3581,7 +3678,7 @@
             let opts = '<option value="">- Pilih Bus Tujuan -</option>';
             currentBusConfigs.forEach(b => {
                 if(b.id !== busId) {
-                    const sisa = b.passengers.filter(p => !p).length;
+                    const sisa = b.passengers.filter((p, i) => !p && !isSeatDisabled(b, i)).length;
                     opts += `<option value="${b.id}">${b.nama} (Sisa: ${sisa} Kursi)</option>`;
                 }
             });
@@ -3603,7 +3700,7 @@
             let targetBus = currentBusConfigs.find(b => b.id === targetBusId);
             let sourceBus = currentBusConfigs.find(b => b.id === actionSeatData.busId);
             
-            let emptyIdx = targetBus.passengers.findIndex(p => p === null);
+            let emptyIdx = targetBus.passengers.findIndex((p, idx) => p === null && !isSeatDisabled(targetBus, idx));
             if(emptyIdx === -1) return showToast("Gagal! Bus tujuan sudah penuh.", "error");
             
             targetBus.passengers[emptyIdx] = actionSeatData.data;
@@ -3628,13 +3725,38 @@
 
         function handleSeatClick(busId, seatIdx) {
             let bus = currentBusConfigs.find(b => b.id === busId);
+            if (!Array.isArray(bus.disabledSeats)) bus.disabledSeats = [];
+
+            // STATE 0: SEDANG DALAM MODE EDIT TATA LETAK KURSI MANUAL
+            if (isEditLayoutMode) {
+                const disPos = bus.disabledSeats.indexOf(seatIdx);
+                if (disPos > -1) {
+                    // Kembalikan lorong menjadi kursi aktif
+                    bus.disabledSeats.splice(disPos, 1);
+                } else {
+                    // Jika kursi sedang ada penumpangnya, kembalikan dulu ke Ruang Tunggu
+                    let occ = bus.passengers[seatIdx];
+                    if (occ) {
+                        if (occ.type === 'Guru') pendingPlotGuru.push(occ);
+                        else pendingPlotSiswa.push(occ);
+                        bus.passengers[seatIdx] = null;
+                        showToast(`${occ.name} dipindahkan ke Ruang Tunggu karena kursi dihapus.`, "info");
+                    }
+                    bus.disabledSeats.push(seatIdx);
+                }
+                renderVisualDenahBus();
+                return;
+            }
+
+            // Abaikan klik jika slot adalah lorong (disabled)
+            if (isSeatDisabled(bus, seatIdx)) return;
+
             let currentSeatData = bus.passengers[seatIdx];
 
             // STATE 1: SEDANG MAU MENARUH/MENUKAR (SWAP MODE)
             if (selectedPassenger) {
                 if (selectedPassenger.source === 'wait') {
                     if (currentSeatData) {
-                        // Tolak jika kursi sudah diisi (Ruang tunggu hanya bisa ngisi kursi kosong)
                         if(currentSeatData.type === 'Guru') pendingPlotGuru.push(currentSeatData);
                         else pendingPlotSiswa.push(currentSeatData);
                     }
@@ -3643,7 +3765,6 @@
                     bus.passengers[seatIdx] = selectedPassenger.data;
                 } 
                 else if (selectedPassenger.source === 'bus') {
-                    // TUKAR / GESER POSISI
                     let sourceBus = currentBusConfigs.find(b => b.id === selectedPassenger.busId);
                     sourceBus.passengers[selectedPassenger.seatIdx] = currentSeatData; 
                     bus.passengers[seatIdx] = selectedPassenger.data;
@@ -3660,11 +3781,15 @@
         }
 
         function autoPlotBus() {
+            if (isEditLayoutMode) {
+                isEditLayoutMode = false;
+                updateEditLayoutBtnUI();
+            }
             const btn = document.querySelector('button[onclick="autoPlotBus()"]');
             if(btn) { btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Memproses...`; btn.disabled = true; }
             
             setTimeout(() => {
-                // 1. Reset
+                // 1. Reset semua penumpang kembali ke ruang tunggu (kursi yang disabled tetap terjaga)
                 currentBusConfigs.forEach(bus => {
                     if(!bus.passengers) bus.passengers = new Array(bus.kapasitas).fill(null);
                     for(let i=0; i<bus.kapasitas; i++) {
@@ -3676,38 +3801,44 @@
                     }
                 });
 
-                // 2. Sort siswa
+                // 2. Sort siswa berdasarkan kelas
                 pendingPlotSiswa.sort((a,b) => a.class.localeCompare(b.class));
 
-                // 3. Plot Guru di depan (Maks 2 per bus)
+                // 3. Plot Guru di kursi aktif terdepan (Maks 2 per bus)
                 currentBusConfigs.forEach(bus => {
                     let seatIdx = 0; let guruCount = 0;
                     while(pendingPlotGuru.length > 0 && seatIdx < bus.kapasitas && guruCount < 2) {
-                        bus.passengers[seatIdx++] = pendingPlotGuru.shift();
-                        guruCount++;
+                        if (!isSeatDisabled(bus, seatIdx)) {
+                            bus.passengers[seatIdx] = pendingPlotGuru.shift();
+                            guruCount++;
+                        }
+                        seatIdx++;
                     }
                 });
                 
-                // Sisa guru paksa masuk kursi kosong terdepan
+                // Sisa guru masuk kursi aktif kosong terdepan
                 currentBusConfigs.forEach(bus => {
                     for(let i=0; i<bus.kapasitas; i++) {
-                        if(!bus.passengers[i] && pendingPlotGuru.length > 0) {
+                        if(!isSeatDisabled(bus, i) && !bus.passengers[i] && pendingPlotGuru.length > 0) {
                             bus.passengers[i] = pendingPlotGuru.shift();
                         }
                     }
                 });
 
-                // 4. Plot Siswa (Algoritma sebar rombel)
+                // 4. Plot Siswa (Lewati kursi yang disabled/lorong)
                 currentBusConfigs.forEach(bus => {
                     let lastClassInBus = null;
                     for(let i=0; i<bus.kapasitas; i++) {
-                        if(bus.passengers[i]) continue; 
+                        if(isSeatDisabled(bus, i) || bus.passengers[i]) continue; 
                         if(pendingPlotSiswa.length === 0) break;
 
                         let nextSiswa = pendingPlotSiswa[0];
-                        let sisaKursi = bus.kapasitas - i;
+                        let sisaKursiAktif = 0;
+                        for (let k = i; k < bus.kapasitas; k++) {
+                            if (!isSeatDisabled(bus, k) && !bus.passengers[k]) sisaKursiAktif++;
+                        }
 
-                        if (lastClassInBus && lastClassInBus !== nextSiswa.class && sisaKursi <= 5) {
+                        if (lastClassInBus && lastClassInBus !== nextSiswa.class && sisaKursiAktif <= 5) {
                             break; 
                         }
 
@@ -3718,12 +3849,11 @@
                 
                 selectedPassenger = null;
                 renderVisualDenahBus();
-                showToast("Selesai! Peserta di-plot otomatis sesuai rombel kelas.", "success");
+                showToast("Selesai! Peserta di-plot otomatis mengikuti tata letak kursi aktif.", "success");
                 
-                if(btn) { btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Isi Kursi Otomatis`; btn.disabled = false; }
-        }, 600);
-    }
-
+                if(btn) { btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Plot`; btn.disabled = false; }
+            }, 600);
+        }
    function switchManifestTab(tab) {
             const tabBus = document.getElementById('tab-man-bus');
             const tabAbsen = document.getElementById('tab-man-absen');
@@ -3957,7 +4087,16 @@ function renderAbsensiList() {
             `;
         }
 
-        // Helper merakit 1 Kerangka Bus Utuh ukuran Proporsional A4 (640px)
+        // Helper khusus merakit kotak ruang kosong/lorong hasil custom layout di dalam PDF
+        function generatePDFDisabledSeatBox() {
+            return `
+                <div style="flex: 1; height: 42px; border: 1px dashed #cbd5e1; border-radius: 6px; background-color: #f8fafc; display: flex; align-items: center; justify-content: center; font-size: 7.5px; font-weight: 800; color: #cbd5e1; text-transform: uppercase; box-sizing: border-box;">
+                    LORONG
+                </div>
+            `;
+        }
+
+        // Helper merakit 1 Kerangka Bus Utuh ukuran Proporsional A4 (640px) + Support Custom Seat Layout
         function buildSingleBusPDFCard(bus) {
             const is22 = bus.layout === '2-2';
             let L = bus.kapasitas % 2 !== 0 ? 5 : 6; 
@@ -3967,6 +4106,7 @@ function renderAbsensiList() {
             
             let rowsHtml = '';
             let seatIndex = 0;
+            let displayNum = 1;
 
             // 1. Baris Normal
             while (normalSeatCount > 0) {
@@ -3975,8 +4115,12 @@ function renderAbsensiList() {
                 for (let c = 0; c < R; c++) {
                     if (c === 2) rowsHtml += `<div style="width: 26px; flex-shrink: 0;"></div>`;
                     if (c < seatsInThisRow) {
-                        let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                        rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
+                        if (isSeatDisabled(bus, seatIndex)) {
+                            rowsHtml += generatePDFDisabledSeatBox();
+                        } else {
+                            let p = bus.passengers ? bus.passengers[seatIndex] : null;
+                            rowsHtml += generatePDFSeatBox(p, displayNum++);
+                        }
                         seatIndex++;
                     } else {
                         rowsHtml += `<div style="flex: 1;"></div>`;
@@ -3994,8 +4138,12 @@ function renderAbsensiList() {
                 <div style="flex: 1; height: 42px; border: 1.5px dashed #cbd5e1; border-radius: 6px; background-color: #f8fafc; box-sizing: border-box;"></div>
                 <div style="width: 26px; flex-shrink: 0;"></div>`;
             for (let c = 0; c < doorSeats; c++) {
-                let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
+                if (isSeatDisabled(bus, seatIndex)) {
+                    rowsHtml += generatePDFDisabledSeatBox();
+                } else {
+                    let p = bus.passengers ? bus.passengers[seatIndex] : null;
+                    rowsHtml += generatePDFSeatBox(p, displayNum++);
+                }
                 seatIndex++;
             }
             rowsHtml += `</div>`;
@@ -4003,13 +4151,18 @@ function renderAbsensiList() {
             // 3. Baris Paling Belakang (Full 5 atau 6 kursi)
             rowsHtml += `<div style="display: flex; gap: 6px; width: 100%; margin-top: 3px; align-items: center;">`;
             for (let c = 0; c < L; c++) {
-                let p = bus.passengers ? bus.passengers[seatIndex] : null;
-                rowsHtml += generatePDFSeatBox(p, seatIndex + 1);
+                if (isSeatDisabled(bus, seatIndex)) {
+                    rowsHtml += generatePDFDisabledSeatBox();
+                } else {
+                    let p = bus.passengers ? bus.passengers[seatIndex] : null;
+                    rowsHtml += generatePDFSeatBox(p, displayNum++);
+                }
                 seatIndex++;
             }
             rowsHtml += `</div>`;
 
             let badgeColor = bus.gender === 'Ikhwan' ? '#38bdf8' : (bus.gender === 'Akhwat' ? '#fb7185' : '#cbd5e1');
+            const activeCap = getActiveSeatCount(bus);
 
             return `
                 <div style="width: 100%; max-width: 640px; margin: 0 auto; border: 2px solid #94a3b8; border-radius: 20px 20px 12px 12px; overflow: hidden; background-color: #f8fafc; box-sizing: border-box;">
@@ -4020,7 +4173,7 @@ function renderAbsensiList() {
                     </div>
                     <div style="background-color: #1e293b; color: #ffffff; padding: 8px 14px; text-align: center; border-bottom: 2px solid #0f172a;">
                         <h4 style="margin: 0; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">${bus.nama}</h4>
-                        <span style="font-size: 10px; color: ${badgeColor}; font-weight: 700;">${bus.gender} • ${bus.kapasitas} Kursi (Layout ${bus.layout})</span>
+                        <span style="font-size: 10px; color: ${badgeColor}; font-weight: 700;">${bus.gender} • ${activeCap} Kursi Aktif (Layout ${bus.layout})</span>
                     </div>
                     <div style="padding: 16px;">
                         ${rowsHtml}
@@ -4028,7 +4181,6 @@ function renderAbsensiList() {
                 </div>
             `;
         }
-
         function downloadPDFManifest() {
             if (!currentBusConfigs || currentBusConfigs.length === 0) return showToast("Tidak ada data armada.", "error");
             
