@@ -3880,15 +3880,15 @@ function renderAbsensiList() {
         // ==========================================
         function printA4PDF(title, htmlContent, isLandscape = false) {
             const finalHtml = `
-                <div style="width: ${isLandscape ? '1020px' : '720px'}; padding: 25px 30px; background-color: #ffffff; color: #000000; font-family: 'Inter', sans-serif; position: relative; box-sizing: border-box;">
+                <div style="width: ${isLandscape ? '1020px' : '720px'}; padding: 20px 30px; background-color: #ffffff; color: #000000; font-family: 'Inter', sans-serif; position: relative; box-sizing: border-box;">
                     <!-- TANGGAL CETAK DI KANAN ATAS (Aman dari potongan) -->
-                    <div style="position: absolute; top: 25px; right: 30px; font-size: 9px; color: #64748b; text-align: right; line-height: 1.4;">
+                    <div style="position: absolute; top: 20px; right: 30px; font-size: 9px; color: #64748b; text-align: right; line-height: 1.4;">
                         Dicetak pada:<br><strong style="color: #334155;">${new Date().toLocaleString('id-ID')}</strong>
                     </div>
                     
                     <!-- KOP SURAT CENTERED -->
-                    <div style="border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; text-align: center;">
-                        <img src="https://i.ibb.co.com/jvJhWqgK/Screenshot-2026-09-28-115354.png" style="width: 55px; height: 55px; object-fit: contain; margin-bottom: 6px; display: inline-block;">
+                    <div style="border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 18px; text-align: center;">
+                        <img src="https://i.ibb.co.com/jvJhWqgK/Screenshot-2026-09-28-115354.png" crossorigin="anonymous" style="width: 55px; height: 55px; object-fit: contain; margin-bottom: 6px; display: inline-block;">
                         <h2 style="margin: 0; font-size: 20px; color: #1e3a8a; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">${title.replace(/_/g, ' ')}</h2>
                         <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b; font-weight: bold;">Al Wildan Islamic School - Dokumen Internal Sistem Event</p>
                     </div>
@@ -3897,17 +3897,33 @@ function renderAbsensiList() {
             `;
 
             const opt = {
-                margin: [0.3, 0.2, 0.3, 0.2], 
+                margin: [0.25, 0.2, 0.25, 0.2], 
                 filename: `${title}.pdf`,
                 image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true, logging: false },
+                html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
                 jsPDF: { unit: 'in', format: 'a4', orientation: isLandscape ? 'landscape' : 'portrait' },
-                // KUNCI UTAMA AGAR TIDAK KEPOTONG DI TENGAH KOTAK BUS:
-                pagebreak: { mode: ['css', 'legacy'], avoid: ['.pdf-bus-card', 'tr'] }
+                // Gunakan mode css + legacy + class resmi html2pdf__page-break
+                pagebreak: { mode: ['css', 'legacy'], before: '.html2pdf__page-break', avoid: ['.pdf-bus-card', 'tr'] }
             };
             
             showToast("Memproses PDF A4... Mohon tunggu sebentar", "info");
-            html2pdf().set(opt).from(finalHtml).save().then(() => {
+
+            // Render ke elemen virtual dulu agar semua gambar (termasuk Foto Nota Supabase) selesai loading 100% sebelum dipotret
+            const tempContainer = document.createElement('div');
+            tempContainer.innerHTML = finalHtml;
+            const images = Array.from(tempContainer.querySelectorAll('img'));
+            
+            const imgPromises = images.map(img => {
+                if (img.complete) return Promise.resolve();
+                return new Promise(resolve => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                });
+            });
+
+            Promise.all(imgPromises).then(() => {
+                return html2pdf().set(opt).from(tempContainer.firstElementChild).save();
+            }).then(() => {
                 showToast("PDF berhasil diunduh!", "success");
             }).catch(err => {
                 console.error("Gagal mencetak PDF:", err); 
@@ -4018,10 +4034,13 @@ function renderAbsensiList() {
             
             let content = '';
             currentBusConfigs.forEach((bus, idx) => {
-                // Bus ke-2 dan seterusnya otomatis pindah ke halaman baru (1 Halaman = 1 Bus)
-                const pageBreakStyle = idx > 0 ? 'page-break-before: always; break-before: page; padding-top: 15px;' : '';
+                // Gunakan pemotong halaman resmi untuk bus ke-2 dan seterusnya
+                if (idx > 0) {
+                    content += `<div class="html2pdf__page-break" style="page-break-before: always; break-before: page; height: 1px;"></div>`;
+                }
+
                 const infoHeader = idx === 0 ? `
-                    <div style="text-align: center; margin-bottom: 14px; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; max-width: 640px; margin-left: auto; margin-right: auto;">
+                    <div style="text-align: center; margin-bottom: 12px; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; max-width: 640px; margin-left: auto; margin-right: auto;">
                         <p style="font-size: 11px; color: #334155; margin: 0; line-height: 1.5;">
                             <strong>Event:</strong> ${activeEventManifest.title} &nbsp;|&nbsp; 
                             <strong>Lokasi:</strong> ${activeEventManifest.extendedProps.loc} &nbsp;|&nbsp; 
@@ -4029,13 +4048,13 @@ function renderAbsensiList() {
                         </p>
                     </div>
                 ` : `
-                    <div style="text-align: center; margin-bottom: 10px;">
+                    <div style="text-align: center; margin-bottom: 10px; padding-top: 10px;">
                         <span style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">${activeEventManifest.title} • ${activeEventManifest.extendedProps.loc} (Armada ${idx + 1} dari ${currentBusConfigs.length})</span>
                     </div>
                 `;
 
                 content += `
-                    <div class="pdf-bus-card" style="${pageBreakStyle} page-break-inside: avoid; break-inside: avoid;">
+                    <div class="pdf-bus-card" style="page-break-inside: avoid; break-inside: avoid;">
                         ${infoHeader}
                         ${buildSingleBusPDFCard(bus)}
                     </div>
@@ -4346,63 +4365,66 @@ function renderAbsensiList() {
 
             // 1. HALAMAN 1: Ringkasan Eksekutif, Kehadiran, Evaluasi & Realisasi Biaya
             let html = `
-                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <span style="font-size: 9px; font-weight: 900; color: #2563eb; text-transform: uppercase; letter-spacing: 1px;">${ev.type}</span>
-                        <h3 style="margin: 2px 0; font-size: 16px; color: #0f172a; font-weight: 900;">${ev.title}</h3>
-                        <p style="margin: 0; font-size: 11px; color: #475569;">Lokasi: <strong>${ev.extendedProps.loc}</strong></p>
-                    </div>
-                    <div style="text-align: right;">
-                        <p style="margin: 0; font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: bold;">Tanggal Pelaksanaan</p>
-                        <p style="margin: 2px 0 0 0; font-size: 13px; color: #1e3a8a; font-weight: 900;">${ev.start}</p>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 14px; margin-bottom: 18px;">
-                    <div style="flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 11px; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Rekap Kehadiran (E-Absensi)</h4>
-                        <p style="font-size: 11px; margin: 4px 0;">Persentase Kehadiran: <strong style="color: #10b981; font-size: 13px;">${stats.attPct}%</strong> (${stats.hadirCount} dari ${stats.totalPax} Pax)</p>
-                        <p style="font-size: 11px; margin: 4px 0;">Penerima Konsumsi: <strong>${stats.makanCount} Pax</strong></p>
-                        <p style="font-size: 10px; color: #64748b; margin: 8px 0 3px 0; font-weight: bold;">Daftar Tidak Hadir (Alfa/Izin):</p>
-                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px; font-size: 9.5px; color: #334155; white-space: pre-line;">${stats.absentList}</div>
+                <div class="pdf-bus-card" style="page-break-inside: avoid; break-inside: avoid;">
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 9px; font-weight: 900; color: #2563eb; text-transform: uppercase; letter-spacing: 1px;">${ev.type}</span>
+                            <h3 style="margin: 2px 0; font-size: 16px; color: #0f172a; font-weight: 900;">${ev.title}</h3>
+                            <p style="margin: 0; font-size: 11px; color: #475569;">Lokasi: <strong>${ev.extendedProps.loc}</strong></p>
+                        </div>
+                        <div style="text-align: right;">
+                            <p style="margin: 0; font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: bold;">Tanggal Pelaksanaan</p>
+                            <p style="margin: 2px 0 0 0; font-size: 13px; color: #1e3a8a; font-weight: 900;">${ev.start}</p>
+                        </div>
                     </div>
 
-                    <div style="flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 11px; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Evaluasi Vendor & Lokasi</h4>
-                        <p style="font-size: 10.5px; margin: 4px 0;"><strong>Armada Bus (${ stats.busCount } Unit):</strong> <span style="color: #f59e0b;">${starStr(rep.ratingBus)}</span><br><span style="color:#475569; font-size:9.5px;">"${rep.reviewBusText || '-'}"</span></p>
-                        <p style="font-size: 10.5px; margin: 6px 0;"><strong>Konsumsi / Catering:</strong> <span style="color: #f59e0b;">${starStr(rep.ratingFood)}</span><br><span style="color:#475569; font-size:9.5px;">"${rep.reviewFoodText || '-'}"</span></p>
-                        <p style="font-size: 10.5px; margin: 6px 0 0 0;"><strong>Fasilitas Lokasi:</strong> <span style="color: #f59e0b;">${starStr(rep.ratingTrans)}</span><br><span style="color:#475569; font-size:9.5px;">"${rep.reviewLocText || '-'}"</span></p>
-                    </div>
-                </div>
+                    <div style="display: flex; gap: 14px; margin-bottom: 18px;">
+                        <div style="flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 11px; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Rekap Kehadiran (E-Absensi)</h4>
+                            <p style="font-size: 11px; margin: 4px 0;">Persentase Kehadiran: <strong style="color: #10b981; font-size: 13px;">${stats.attPct}%</strong> (${stats.hadirCount} dari ${stats.totalPax} Pax)</p>
+                            <p style="font-size: 11px; margin: 4px 0;">Penerima Konsumsi: <strong>${stats.makanCount} Pax</strong></p>
+                            <p style="font-size: 10px; color: #64748b; margin: 8px 0 3px 0; font-weight: bold;">Daftar Tidak Hadir (Alfa/Izin):</p>
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px; font-size: 9.5px; color: #334155; white-space: pre-line;">${stats.absentList}</div>
+                        </div>
 
-                <div style="border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px; margin-bottom: 10px;">
-                    <h4 style="margin: 0 0 10px 0; font-size: 11px; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Realisasi Biaya Operasional (Berdasarkan E-Absensi)</h4>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-                        <tr style="border-bottom: 1px dashed #e2e8f0;">
-                            <td style="padding: 6px 0; color: #475569;">1. Tiket Masuk / HTM (${stats.hadirCount} Peserta Hadir × ${formatMoney(rep.costTicket)})</td>
-                            <td style="padding: 6px 0; text-align: right; font-weight: bold;">${formatMoney(totalTicket)}</td>
-                        </tr>
-                        <tr style="border-bottom: 1px dashed #e2e8f0;">
-                            <td style="padding: 6px 0; color: #475569;">2. Konsumsi / Catering (${stats.makanCount} Porsi Terdistribusi × ${formatMoney(rep.costFood)})</td>
-                            <td style="padding: 6px 0; text-align: right; font-weight: bold;">${formatMoney(totalFood)}</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #cbd5e1;">
-                            <td style="padding: 6px 0; color: #475569;">3. Sewa Armada Bus (${stats.busCount} Unit Armada × ${formatMoney(rep.costTrans)})</td>
-                            <td style="padding: 6px 0; text-align: right; font-weight: bold;">${formatMoney(totalTrans)}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px 0 0 0; font-size: 12px; font-weight: 900; color: #1e3a8a; text-transform: uppercase;">Total Biaya Operasional Aktual</td>
-                            <td style="padding: 10px 0 0 0; text-align: right; font-size: 14px; font-weight: 900; color: #10b981;">${formatMoney(grandTotal)}</td>
-                        </tr>
-                    </table>
+                        <div style="flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 11px; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Evaluasi Vendor & Lokasi</h4>
+                            <p style="font-size: 10.5px; margin: 4px 0;"><strong>Armada Bus (${ stats.busCount } Unit):</strong> <span style="color: #f59e0b;">${starStr(rep.ratingBus)}</span><br><span style="color:#475569; font-size:9.5px;">"${rep.reviewBusText || '-'}"</span></p>
+                            <p style="font-size: 10.5px; margin: 6px 0;"><strong>Konsumsi / Catering:</strong> <span style="color: #f59e0b;">${starStr(rep.ratingFood)}</span><br><span style="color:#475569; font-size:9.5px;">"${rep.reviewFoodText || '-'}"</span></p>
+                            <p style="font-size: 10.5px; margin: 6px 0 0 0;"><strong>Fasilitas Lokasi:</strong> <span style="color: #f59e0b;">${starStr(rep.ratingTrans)}</span><br><span style="color:#475569; font-size:9.5px;">"${rep.reviewLocText || '-'}"</span></p>
+                        </div>
+                    </div>
+
+                    <div style="border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px; margin-bottom: 10px;">
+                        <h4 style="margin: 0 0 10px 0; font-size: 11px; color: #1e3a8a; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Realisasi Biaya Operasional (Berdasarkan E-Absensi)</h4>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                            <tr style="border-bottom: 1px dashed #e2e8f0;">
+                                <td style="padding: 6px 0; color: #475569;">1. Tiket Masuk / HTM (${stats.hadirCount} Peserta Hadir × ${formatMoney(rep.costTicket)})</td>
+                                <td style="padding: 6px 0; text-align: right; font-weight: bold;">${formatMoney(totalTicket)}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px dashed #e2e8f0;">
+                                <td style="padding: 6px 0; color: #475569;">2. Konsumsi / Catering (${stats.makanCount} Porsi Terdistribusi × ${formatMoney(rep.costFood)})</td>
+                                <td style="padding: 6px 0; text-align: right; font-weight: bold;">${formatMoney(totalFood)}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #cbd5e1;">
+                                <td style="padding: 6px 0; color: #475569;">3. Sewa Armada Bus (${stats.busCount} Unit Armada × ${formatMoney(rep.costTrans)})</td>
+                                <td style="padding: 6px 0; text-align: right; font-weight: bold;">${formatMoney(totalTrans)}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px 0 0 0; font-size: 12px; font-weight: 900; color: #1e3a8a; text-transform: uppercase;">Total Biaya Operasional Aktual</td>
+                                <td style="padding: 10px 0 0 0; text-align: right; font-size: 14px; font-weight: 900; color: #10b981;">${formatMoney(grandTotal)}</td>
+                            </tr>
+                        </table>
+                    </div>
                 </div>
             `;
 
-            // 2. HALAMAN 2+: Lampiran Denah Bus (Judul menyatu dengan Bus, 1 Halaman = 1 Bus Proporsional)
+            // 2. HALAMAN 2+: Lampiran Denah Bus (Dipisah dengan div.html2pdf__page-break murni agar 100% pindah halaman)
             if (stats.busConfigs && stats.busConfigs.length > 0) {
                 stats.busConfigs.forEach((bus, idx) => {
                     html += `
-                        <div class="pdf-bus-card" style="page-break-before: always; break-before: page; page-break-inside: avoid; break-inside: avoid; padding-top: 10px;">
+                        <div class="html2pdf__page-break" style="page-break-before: always; break-before: page; height: 1px;"></div>
+                        <div class="pdf-bus-card" style="page-break-inside: avoid; break-inside: avoid; padding-top: 15px;">
                             <div style="text-align: center; margin-bottom: 14px; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; max-width: 640px; margin-left: auto; margin-right: auto;">
                                 <h4 style="margin: 0; font-size: 14px; color: #1e3a8a; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">
                                     Lampiran Denah Plotting Armada Bus ${stats.busConfigs.length > 1 ? `(${idx + 1}/${stats.busConfigs.length})` : ''}
@@ -4417,10 +4439,11 @@ function renderAbsensiList() {
                 });
             }
 
-            // 3. HALAMAN TERAKHIR KHUSUS: Lampiran Foto Bukti Transaksi / Nota (Terpisah Halaman dari Bus)
+            // 3. HALAMAN TERAKHIR KHUSUS: Lampiran Foto Bukti Transaksi / Nota (Dipisah dengan div.html2pdf__page-break murni)
             if (rep.notaUrl) {
                 html += `
-                    <div class="pdf-bus-card" style="page-break-before: always; break-before: page; page-break-inside: avoid; break-inside: avoid; padding-top: 10px; text-align: center;">
+                    <div class="html2pdf__page-break" style="page-break-before: always; break-before: page; height: 1px;"></div>
+                    <div class="pdf-bus-card" style="page-break-inside: avoid; break-inside: avoid; padding-top: 15px; text-align: center;">
                         <div style="text-align: center; margin-bottom: 16px; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; max-width: 640px; margin-left: auto; margin-right: auto;">
                             <h4 style="margin: 0; font-size: 14px; color: #1e3a8a; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">
                                 Lampiran Bukti Transaksi / Nota Operasional
@@ -4429,8 +4452,8 @@ function renderAbsensiList() {
                                 ${ev.title} • ${ev.extendedProps.loc} (${ev.start})
                             </p>
                         </div>
-                        <div style="max-width: 640px; margin: 0 auto; padding: 12px; border: 1.5px solid #cbd5e1; border-radius: 14px; background: #f8fafc;">
-                            <img src="${rep.notaUrl}" style="max-width: 100%; max-height: 760px; object-fit: contain; border-radius: 8px; display: inline-block;">
+                        <div style="max-width: 640px; margin: 0 auto; padding: 14px; border: 1.5px solid #cbd5e1; border-radius: 14px; background: #f8fafc; box-sizing: border-box;">
+                            <img src="${rep.notaUrl}" crossorigin="anonymous" style="max-width: 100%; max-height: 620px; width: auto; height: auto; object-fit: contain; border-radius: 8px; display: block; margin: 0 auto;">
                         </div>
                     </div>
                 `;
