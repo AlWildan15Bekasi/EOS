@@ -2254,8 +2254,31 @@
         // ==========================================
         // DATABASE WRITE LOGIC (INSERT / UPDATE / DELETE)
         // ==========================================
-        async function deleteMasterData(table, id) {
-            if(!confirm(`Yakin mau menghapus data ini dari database?`)) return;
+       async function deleteMasterData(table, id) {
+            // PROTEKSI SAFE-DELETE: Cek apakah data ini sedang dipakai di GLOBAL_EVENTS
+            let isUsed = false;
+            let eventName = '';
+            for (let ev of GLOBAL_EVENTS) {
+                let ep = ev.extendedProps;
+                if (table === 'lokasi' && parseInt(ep.locId) === id) { isUsed = true; eventName = ev.title; break; }
+                if (table === 'vendor_bus' && parseInt(ep.busVendorId) === id) { isUsed = true; eventName = ev.title; break; }
+                if (table === 'vendor_catering' && parseInt(ep.catVendorId) === id) { isUsed = true; eventName = ev.title; break; }
+                if (table === 'siswa') {
+                    let ds = typeof ep.daftar_siswa === 'string' ? JSON.parse(ep.daftar_siswa) : (ep.daftar_siswa || []);
+                    if (ds.some(s => parseInt(s.id) === id)) { isUsed = true; eventName = ev.title; break; }
+                }
+                if (table === 'guru') {
+                    let dg = typeof ep.daftar_guru === 'string' ? JSON.parse(ep.daftar_guru) : (ep.daftar_guru || []);
+                    if (dg.some(g => parseInt(g.id) === id)) { isUsed = true; eventName = ev.title; break; }
+                }
+            }
+
+            if (isUsed) {
+                showToast(`Data tidak bisa dihapus karena sedang dipakai pada event: ${eventName}`, "error");
+                return;
+            }
+
+            if(!confirm(`Yakin mau menghapus data ini secara permanen dari database?`)) return;
             showToast("Menghapus data...", "info");
             try {
                 const { error } = await supabaseApp.from(table).delete().eq('id', id);
@@ -2276,7 +2299,6 @@
                 showToast("Gagal menghapus data.", "error");
             }
         }
-
         async function submitNewSiswa(e) {
             e.preventDefault();
             const nameInp = document.getElementById('inp-new-siswa-name');
@@ -3185,6 +3207,24 @@
                     cat_pax: parseInt(document.getElementById('edit-cat-count').value) || 0
                 };
 
+                // PROTEKSI EDIT BUS: Cek apakah Vendor Bus atau Jumlah Unit berubah
+                const ev = MY_PLANNING.find(p => p.id == id);
+                if (ev) {
+                    const oldBusVendor = ev.extendedProps.busVendorId || null;
+                    const oldBusUnit = ev.extendedProps.busUnit || 0;
+                    const hasKonfig = ev.extendedProps.konfigurasi_bus && ev.extendedProps.konfigurasi_bus.length > 0;
+                    
+                    if (hasKonfig && (oldBusVendor !== payload.bus_vendor_id || oldBusUnit !== payload.bus_unit)) {
+                        if(!confirm("⚠️ PERHATIAN: Perubahan Vendor atau Jumlah Armada Bus akan me-reset (menghapus) data Plotting Kursi sebelumnya. Yakin ingin melanjutkan?")) {
+                            btn.innerHTML = `<i class="fa-solid fa-save"></i> Simpan Perubahan`; 
+                            btn.disabled = false;
+                            return;
+                        }
+                        // Jika lanjut, reset konfigurasi plotting bus-nya
+                        payload.konfigurasi_bus = null;
+                    }
+                }
+
                 const { error } = await supabaseApp.from('events').update(payload).eq('id', id);
                 if (error) throw error;
 
@@ -3202,7 +3242,6 @@
                 btn.disabled = false;
             }
         }
-
        // ==========================================
         // MANIFEST & ABSENSI LOGIC (STAGE 8 & 9)
         // ==========================================
@@ -4620,30 +4659,30 @@ function renderAbsensiList() {
             const guide = document.getElementById('csv-guide-list');
             if(type === 'siswa') {
                 guide.innerHTML = `
-                    <li><strong class="text-slate-800">Kolom 1:</strong> Nama Lengkap Siswa</li>
-                    <li><strong class="text-slate-800">Kolom 2:</strong> Jenjang (SD / SMP / SMA)</li>
-                    <li><strong class="text-slate-800">Kolom 3:</strong> Kelas / Rombel (Cth: 1 INTER 1)</li>
+                    <li><strong class="text-slate-800">Kolom 1:</strong> nama</li>
+                    <li><strong class="text-slate-800">Kolom 2:</strong> jenjang</li>
+                    <li><strong class="text-slate-800">Kolom 3:</strong> kelas</li>
                 `;
             } else {
                 guide.innerHTML = `
-                    <li><strong class="text-slate-800">Kolom 1:</strong> Nama Lengkap & Gelar</li>
-                    <li><strong class="text-slate-800">Kolom 2:</strong> Posisi / Jabatan</li>
+                    <li><strong class="text-slate-800">Kolom 1:</strong> nama</li>
+                    <li><strong class="text-slate-800">Kolom 2:</strong> jabatan</li>
                 `;
             }
             openModal('import-csv-modal');
         }
 
-        // Fungsi Unduh Contoh Template CSV agar user tidak salah format
+        // Fungsi Unduh Contoh Template CSV agar nama kolom 100% sama dengan Supabase
         function downloadCSVTemplate() {
             const type = document.getElementById('csv-type').value;
             let csvContent = '';
             let fileName = '';
 
             if (type === 'siswa') {
-                csvContent = 'Nama Lengkap,Jenjang,Kelas\nMuhammad Al Fatih,SD,1 INTER 1\nAisyah Humaira,SMP,7 AE 2\nUmar Bin Khattab,SMA,10 IPA 1';
+                csvContent = 'nama,jenjang,kelas\nMuhammad Al Fatih,SD,1 INTER 1\nAisyah Humaira,SMP,7 AE 2\nUmar Bin Khattab,SMA,10 IPA 1';
                 fileName = 'Template_Import_Siswa.csv';
             } else {
-                csvContent = 'Nama Lengkap,Jabatan\n"Ahmad Fulan, S.Pd",Wali Kelas 1\n"Siti Aminah, M.Pd",Koordinator Event';
+                csvContent = 'nama,jabatan\n"Ahmad Fulan, S.Pd",Wali Kelas 1\n"Siti Aminah, M.Pd",Koordinator Event';
                 fileName = 'Template_Import_Guru.csv';
             }
 
@@ -4715,12 +4754,9 @@ function renderAbsensiList() {
                         const cols = parseCSVLine(line, delimiter);
                         if (cols.length < 2) return; // Lewati baris yang kolomnya tidak lengkap
 
-                        // Deteksi & lewati baris Header jika baris pertama mengandung kata kunci judul kolom
+                        // Auto-skip header jika baris pertama adalah nama kolom persis Supabase
                         const col0Lower = cols[0].toLowerCase();
-                        const col1Lower = cols[1].toLowerCase();
-                        if (index === 0 && (col0Lower.includes('nama') || col1Lower === 'jenjang' || col1Lower.includes('jabatan') || col1Lower.includes('posisi'))) {
-                            return;
-                        }
+                        if (index === 0 && col0Lower === 'nama') return;
 
                         if (type === 'siswa') {
                             const rawName = cols[0];
@@ -4731,14 +4767,13 @@ function renderAbsensiList() {
                             if (!['SD', 'SMP', 'SMA'].includes(rawJenjang)) rawJenjang = 'SD';
 
                             payloadArray.push({
-                                cabang_id: sessionCabang.id,
+                                cabang_id: sessionCabang.id, // ID cabang yang sedang aktif
                                 nama: toProperCase(rawName),
                                 jenjang: rawJenjang,
                                 kelas: rawKelas
                             });
                         } else if (type === 'guru') {
                             const rawName = cols[0];
-                            // Jika gelar tidak pakai tanda kutip dan terpisah koma, gabungkan kolom 2 dst sebagai jabatan atau gelar
                             const rawPos = cols[1] || 'Guru / Staff';
                             if (!rawName) return;
 
@@ -4765,7 +4800,6 @@ function renderAbsensiList() {
                     await fetchMasterData();
                     renderInformation();
                     if (type === 'siswa') {
-                        // Reset dropdown filter kelas agar kelas baru dari CSV ikut muncul
                         const filterDropdown = document.getElementById('filter-kelas-siswa');
                         if (filterDropdown) filterDropdown.innerHTML = '<option value="Semua">Semua Kelas</option>';
                         renderStudents();
