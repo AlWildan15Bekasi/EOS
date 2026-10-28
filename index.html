@@ -1407,7 +1407,7 @@
                 <div id="tab-katalog" class="tab-content hidden fade-in max-w-6xl mx-auto space-y-6">
                     <div>
                         <h2 class="text-2xl font-black text-aw-navy mb-1 tracking-tight">Katalog Master Data</h2>
-                        <p class="text-slate-500 text-sm font-medium">Etalase lokasi, bus, dan konsumsi. Gunakan fitur edit atau hapus dari sini.</p>
+                        <p class="text-slate-500 text-sm font-medium">Etalase lokasi, bus, dan konsumsi. Gunakan fitur edit untuk memperbarui data dari sini.</p>
                     </div>
                     <div class="glass-card p-2 flex flex-col lg:flex-row gap-2 items-center sticky top-0 z-20 shadow-sm border-b-4 border-b-aw-blue">
                         <div class="flex gap-2 w-full lg:w-auto p-2 lg:p-0">
@@ -2119,7 +2119,7 @@
             renderKatalog(type);
         }
 
-        function renderKatalog(type) {
+       function renderKatalog(type) {
             const grid = document.getElementById('katalog-grid');
             let html = '';
             
@@ -2132,9 +2132,8 @@
                         <div class="relative h-48 w-full overflow-hidden bg-slate-200">
                             <img src="${loc.img}" class="loc-card-img w-full h-full object-cover">
                             <div class="absolute top-3 left-3 z-20 bg-aw-navy text-white px-3 py-1 rounded-lg text-[10px] font-black shadow-md uppercase tracking-wider">${loc.type}</div>
-                            <div class="absolute top-3 right-3 z-20 flex gap-2">
-                                <button onclick="editKatalogItem('lokasi', ${loc.id})" class="w-8 h-8 bg-white/90 hover:bg-aw-blue hover:text-white text-aw-blue rounded-full shadow-md transition-colors flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-pen text-xs"></i></button>
-                                <button onclick="deleteMasterData('lokasi', ${loc.id})" class="w-8 h-8 bg-white/90 hover:bg-red-500 hover:text-white text-red-500 rounded-full shadow-md transition-colors flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-trash text-xs"></i></button>
+                            <div class="absolute top-3 right-3 z-20">
+                                <button onclick="editKatalogItem('lokasi', ${loc.id})" class="w-8 h-8 bg-white/90 hover:bg-aw-blue hover:text-white text-aw-blue rounded-full shadow-md transition-colors flex items-center justify-center backdrop-blur-sm" title="Edit Lokasi"><i class="fa-solid fa-pen text-xs"></i></button>
                             </div>
                         </div>
                         <div class="p-5 flex-1 flex flex-col bg-white/50">
@@ -2155,9 +2154,8 @@
                     let imgSrc = b.img ? b.img : 'https://placehold.co/600x400/e2e8f0/64748b?text=No+Image';
                     html += `
                     <div class="rounded-xl border-2 border-slate-200 p-4 bg-white transition-all shadow-sm flex flex-col group relative">
-                        <div class="absolute top-6 right-6 z-20 flex gap-2">
-                            <button onclick="editKatalogItem('bus', ${b.id})" class="w-8 h-8 bg-white/90 hover:bg-aw-blue hover:text-white text-aw-blue rounded-full shadow-md transition-colors flex items-center justify-center"><i class="fa-solid fa-pen text-xs"></i></button>
-                            <button onclick="deleteMasterData('vendor_bus', ${b.id})" class="w-8 h-8 bg-white/90 hover:bg-red-500 hover:text-white text-red-500 rounded-full shadow-md transition-colors flex items-center justify-center"><i class="fa-solid fa-trash text-xs"></i></button>
+                        <div class="absolute top-6 right-6 z-20">
+                            <button onclick="editKatalogItem('bus', ${b.id})" class="w-8 h-8 bg-white/90 hover:bg-aw-blue hover:text-white text-aw-blue rounded-full shadow-md transition-colors flex items-center justify-center" title="Edit Vendor Bus"><i class="fa-solid fa-pen text-xs"></i></button>
                         </div>
                         <img src="${imgSrc}" class="w-full h-32 object-cover rounded-lg mb-3 shadow-sm group-hover:scale-105 transition-transform">
                         <div class="mb-1.5">${getRatingBadgeHtml('bus', b.id)}</div>
@@ -2177,9 +2175,8 @@
 
                     html += `
                     <div class="rounded-xl border-2 border-slate-200 p-4 bg-white transition-all shadow-sm flex flex-col group relative">
-                        <div class="absolute top-6 right-6 z-20 flex gap-2">
-                            <button onclick="editKatalogItem('konsumsi', ${c.id})" class="w-8 h-8 bg-white/90 hover:bg-aw-blue hover:text-white text-aw-blue rounded-full shadow-md transition-colors flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-pen text-xs"></i></button>
-                            <button onclick="deleteMasterData('vendor_catering', ${c.id})" class="w-8 h-8 bg-white/90 hover:bg-red-500 hover:text-white text-red-500 rounded-full shadow-md transition-colors flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-trash text-xs"></i></button>
+                        <div class="absolute top-6 right-6 z-20">
+                            <button onclick="editKatalogItem('konsumsi', ${c.id})" class="w-8 h-8 bg-white/90 hover:bg-aw-blue hover:text-white text-aw-blue rounded-full shadow-md transition-colors flex items-center justify-center backdrop-blur-sm" title="Edit Catering"><i class="fa-solid fa-pen text-xs"></i></button>
                         </div>
                         ${imagesHtml}
                         <div class="mb-1.5">${getRatingBadgeHtml('konsumsi', c.id)}</div>
@@ -2768,8 +2765,13 @@
             activeFilter = type;
             const buttons = document.querySelectorAll('.filter-btn');
             buttons.forEach(btn => {
-                if(btn.innerText === type) btn.className = "filter-btn active whitespace-nowrap px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 bg-aw-navy text-white shadow-md";
-                else btn.className = "filter-btn whitespace-nowrap px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 bg-transparent text-slate-500 hover:bg-white hover:shadow-sm";
+                const btnText = btn.innerText.trim().toLowerCase();
+                const targetText = type.trim().toLowerCase();
+                if(btnText === targetText) {
+                    btn.className = "filter-btn active whitespace-nowrap px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 bg-aw-navy text-white shadow-md";
+                } else {
+                    btn.className = "filter-btn whitespace-nowrap px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 bg-transparent text-slate-500 hover:bg-white hover:shadow-sm";
+                }
             });
             renderLocations();
         }
